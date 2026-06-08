@@ -1,0 +1,272 @@
+﻿<UserControl x:Class="GestorHorarios.DOCENTES.IngenieriaSeleccionD"
+      xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+      xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+      xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006" 
+      xmlns:d="http://schemas.microsoft.com/expression/blend/2008" 
+      xmlns:local="clr-namespace:GestorHorarios.DOCENTES"
+      mc:Ignorable="d" 
+      d:DesignHeight="450" d:DesignWidth="800"
+      Background="{StaticResource ColorWhitesmoke}">
+
+    <UserControl.Resources>
+        <Thickness x:Key="SectionMargin">0,10,0,5</Thickness>
+        <Thickness x:Key="FieldMargin">0,5,0,10</Thickness>
+
+        <Style x:Key="DocenteCardStyle" TargetType="Border">
+            <Setter Property="Background" Value="White"/>
+            <Setter Property="CornerRadius" Value="10"/>
+            <Setter Property="Margin" Value="0,10"/>
+            <Setter Property="Padding" Value="20"/>
+            <Setter Property="Effect">
+                <Setter.Value>
+                    <DropShadowEffect Color="#DDDDDD" Direction="270" ShadowDepth="2" BlurRadius="10" Opacity="0.3"/>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <Style x:Key="FormFieldStyle" TargetType="TextBox">
+            <Setter Property="Padding" Value="8"/>
+            <Setter Property="Margin" Value="{StaticResource FieldMargin}"/>
+            <Setter Property="Height" Value="35"/>
+            <Setter Property="BorderThickness" Value="1"/>
+            <Setter Property="BorderBrush" Value="#CCCCCC"/>
+        </Style>
+
+        <Style x:Key="SectionTitleStyle" TargetType="TextBlock">
+            <Setter Property="FontSize" Value="14"/>
+            <Setter Property="FontWeight" Value="Bold"/>
+            <Setter Property="Foreground" Value="{StaticResource negroTitulos}"/>
+            <Setter Property="Margin" Value="{StaticResource SectionMargin}"/>
+        </Style>
+
+        <Style x:Key="HelperTextStyle" TargetType="TextBlock">
+            <Setter Property="FontSize" Value="12"/>
+            <Setter Property="Foreground" Value="#666666"/>
+            <Setter Property="Margin" Value="0,0,0,10"/>
+        </Style>
+
+        <Style x:Key="PrimaryButtonStyle" TargetType="Button">
+            <Setter Property="Padding" Value="20,10"/>
+            <Setter Property="FontWeight" Value="Bold"/>
+        </Style>
+    </UserControl.Resources>
+
+    <ScrollViewer VerticalScrollBarVisibility="Auto">
+        <StackPanel Margin="40,30" MaxWidth="1200" HorizontalAlignment="Center">
+            <Grid Margin="0,0,0,20">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="Auto"/>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="Auto"/>
+                </Grid.ColumnDefinitions>
+
+                <Button Grid.Column="0"
+                        Content="Volver"
+                        Padding="15,8"
+                        Width="100"
+                        FontSize="14"
+                        Click="VolverCarreras_Click"
+                        Background="{StaticResource RosaOscuro}"/>
+
+                <TextBlock x:Name="TituloCarrera"
+                           Grid.Column="1"
+                           Text="Docentes de Sistemas Computacionales"
+                           FontSize="24"
+                           FontWeight="Bold"
+                           Foreground="{StaticResource GuindaBajo}"
+                           HorizontalAlignment="Center"
+                           VerticalAlignment="Center"/>
+
+                <Button Grid.Column="2"
+                        x:Name="BotonAgregarDocente"
+                        Content="+ Agregar Docente"
+                        Padding="15,8"
+                        FontSize="14"
+                        Width="150"
+                        Click="AgregarDocente_Click"/>
+            </Grid>
+
+            <!-- PANEL FORMULARIO AGREGAR DOCENTE -->
+            <Border x:Name="PanelFormularioDocente" 
+                    Style="{StaticResource DocenteCardStyle}"
+                    Visibility="Collapsed"
+                    Margin="0,0,0,30"
+                    Background="White"
+                    BorderBrush="#CCCCCC"
+                    BorderThickness="1">
+                <StackPanel>
+                    <TextBlock Text="AGREGAR DOCENTE"
+                               FontSize="18"
+                               FontWeight="Bold"
+                               Foreground="{StaticResource GuindaBajo}"
+                               HorizontalAlignment="Center"
+                               Margin="0,0,0,20"/>
+
+                    <!-- NOMBRE -->
+                    <TextBlock Text="NOMBRE:" Style="{StaticResource SectionTitleStyle}"/>
+                    <TextBox x:Name="TextboxNombre" Style="{StaticResource FormFieldStyle}"/>
+
+                    <!-- CARRERA PRINCIPAL -->
+                    <TextBlock Text="CARRERA PRINCIPAL:"
+                               Style="{StaticResource SectionTitleStyle}"/>
+                    <ComboBox x:Name="ComboBoxCarreraPrincipal"
+                              Height="35"
+                              Margin="{StaticResource FieldMargin}"/>
+
+                    <!-- CARRERAS SECUNDARIAS -->
+                    <TextBlock Text="CARRERAS SECUNDARIAS:"
+                               Style="{StaticResource SectionTitleStyle}"/>
+                    <TextBlock Text="Selecciona las carreras adicionales que imparte el docente."
+                               Style="{StaticResource HelperTextStyle}"/>
+
+                    <Border Background="#F9F9F9"
+                            BorderBrush="#DDDDDD"
+                            BorderThickness="1"
+                            CornerRadius="6"
+                            Padding="12,10"
+                            Margin="0,0,0,20">
+                        <ScrollViewer HorizontalScrollBarVisibility="Auto"
+                                      VerticalScrollBarVisibility="Disabled">
+                            <StackPanel x:Name="StackPanelCarrerasSecundarias"
+                                        Orientation="Horizontal"
+                                        Margin="0,2"/>
+                        </ScrollViewer>
+                    </Border>
+
+                    <!-- MATERIAS IMPARTIDAS -->
+                    <TextBlock Text="MATERIAS IMPARTIDAS:" Style="{StaticResource SectionTitleStyle}"/>
+                    <TextBlock Text="Seleccione las materias por semestre:" Style="{StaticResource HelperTextStyle}"/>
+
+                    <ScrollViewer HorizontalScrollBarVisibility="Auto"
+                                  VerticalScrollBarVisibility="Disabled"
+                                  Margin="0,0,0,15">
+                        <StackPanel x:Name="StackPanelMateriasImpartidas"/>
+                    </ScrollViewer>
+
+                    <!-- RESUMEN MATERIAS SELECCIONADAS -->
+                    <Border Background="#F5F5F5"
+                            CornerRadius="6"
+                            Padding="10"
+                            Margin="0,0,0,15"
+                            BorderBrush="#CCCCCC"
+                            BorderThickness="1">
+                        <StackPanel>
+                            <TextBlock Text="Materias impartidas:"
+                                       FontSize="12"
+                                       FontWeight="Bold"
+                                       Foreground="#666666"
+                                       Margin="0,0,0,5"/>
+                            <TextBlock x:Name="TextblockMateriasSeleccionadas"
+                                       Text="(Ninguna seleccionada)"
+                                       FontSize="11"
+                                       Foreground="#999999"
+                                       TextWrapping="Wrap"
+                                       Margin="0,0,0,3"/>
+                        </StackPanel>
+                    </Border>
+
+                    <!-- HORARIO LABORAL -->
+                    <TextBlock Text="HORARIO LABORAL"
+                               FontSize="14"
+                               FontWeight="Bold"
+                               Foreground="#E65100"
+                               Margin="0,10,0,10"/>
+
+                    <!-- TIPO TIEMPO -->
+                    <TextBlock Text="Tipo de contrato:"
+                               FontSize="12"
+                               Foreground="{StaticResource negroTitulos}"
+                               Margin="0,0,0,5"/>
+                    <ComboBox x:Name="ComboBoxTipoTiempo"
+                              Height="35"
+                              Margin="0,0,0,15">
+                        <ComboBoxItem Content="TIEMPO COMPLETO"/>
+                        <ComboBoxItem Content="MEDIO TIEMPO"/>
+                    </ComboBox>
+
+                    <!-- HORAS MÁXIMAS -->
+                    <TextBlock Text="Horas m&#225;ximas semanales (m&#225;x. 40):"
+                               FontSize="12"
+                               Foreground="{StaticResource negroTitulos}"
+                               Margin="0,0,0,5"/>
+                    <TextBox x:Name="TextboxHorasMaximas"
+                             Style="{StaticResource FormFieldStyle}"
+                             Text="20"/>
+
+                    <!-- CONTADOR EN TIEMPO REAL -->
+                    <Border Background="#FFF8E1"
+                            CornerRadius="6"
+                            Padding="12,8"
+                            Margin="0,0,0,15"
+                            BorderBrush="#FFE082"
+                            BorderThickness="1">
+                        <Grid>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*"/>
+                                <ColumnDefinition Width="Auto"/>
+                            </Grid.ColumnDefinitions>
+                            <TextBlock Grid.Column="0"
+                                       Text="Horas asignadas en horario:"
+                                       FontSize="13"
+                                       FontWeight="SemiBold"
+                                       Foreground="#E65100"
+                                       VerticalAlignment="Center"/>
+                            <TextBox x:Name="TextboxHorasDiarias"
+                                     Grid.Column="1"
+                                     Width="60"
+                                     Height="32"
+                                     Text="0"
+                                     IsReadOnly="True"
+                                     Background="#F5F5F5"
+                                     FontSize="16"
+                                     FontWeight="Bold"
+                                     TextAlignment="Center"
+                                     BorderBrush="#CCCCCC"
+                                     BorderThickness="1"
+                                     Padding="4"/>
+                        </Grid>
+                    </Border>
+
+                    <!-- TABLA HORARIO CON CANVAS -->
+                    <TextBlock FontSize="12"
+                               Foreground="#666666"
+                               Margin="0,0,0,10">
+                        <Run Text="Clic izquierdo"/>
+                        <Run Text=" para seleccionar/ampliar el rango. "/>
+                        <Run FontWeight="SemiBold" Foreground="#C62828" Text="Clic derecho"/>
+                        <Run Text=" sobre una celda del día para borrar ese día."/>
+                    </TextBlock>
+
+                    <ScrollViewer HorizontalScrollBarVisibility="Auto" 
+                                  VerticalScrollBarVisibility="Disabled"
+                                  Margin="0,0,0,15">
+                        <Canvas x:Name="CanvasHorario"
+                                Height="300"
+                                Background="White"
+                                ClipToBounds="True"/>
+                    </ScrollViewer>
+
+                    <!-- BOTONES -->
+                    <StackPanel Orientation="Horizontal" HorizontalAlignment="Center" Margin="0,10,0,0">
+                        <Button x:Name="BotonGuardarDocente"
+                                Style="{StaticResource PrimaryButtonStyle}"
+                                Content="Guardar"
+                                Margin="0,0,10,0"
+                                Background="{StaticResource GuindaBajo}"
+                                Foreground="White"
+                                Click="GuardarDocente_Click"/>
+                        <Button x:Name="BotonCancelarDocente"
+                                Style="{StaticResource PrimaryButtonStyle}"
+                                Content="Cancelar"
+                                Background="#CCCCCC"
+                                Foreground="Black"
+                                Click="CancelarDocente_Click"/>
+                    </StackPanel>
+                </StackPanel>
+            </Border>
+
+            <!-- LISTA DOCENTES -->
+            <StackPanel x:Name="ListaDocentes"/>
+        </StackPanel>
+    </ScrollViewer>
+</UserControl>

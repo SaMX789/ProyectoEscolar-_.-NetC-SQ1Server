@@ -1,0 +1,136 @@
+﻿<UserControl x:Class="GestorHorarios.SALONES.SalonesView"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             mc:Ignorable="d"
+             d:DesignHeight="700" d:DesignWidth="1000"
+             Background="{StaticResource ColorWhitesmoke}">
+
+    <UserControl.Resources>
+        <Style x:Key="SalonCardStyle" TargetType="Border">
+            <Setter Property="Background" Value="White"/>
+            <Setter Property="CornerRadius" Value="8"/>
+            <Setter Property="Margin" Value="0,6"/>
+            <Setter Property="Padding" Value="16,12"/>
+            <Setter Property="Effect">
+                <Setter.Value>
+                    <DropShadowEffect Color="#DDDDDD" Direction="270" ShadowDepth="2" BlurRadius="8" Opacity="0.25"/>
+                </Setter.Value>
+            </Setter>
+        </Style>
+    </UserControl.Resources>
+
+    <ScrollViewer VerticalScrollBarVisibility="Auto">
+        <StackPanel Margin="40,30" MaxWidth="1100" HorizontalAlignment="Center">
+
+            <!-- ENCABEZADO -->
+            <Grid Margin="0,0,0,24">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="Auto"/>
+                </Grid.ColumnDefinitions>
+
+                <StackPanel VerticalAlignment="Center">
+                    <TextBlock Text="Gestión de Salones"
+                               FontSize="32" FontWeight="Bold"
+                               Foreground="{StaticResource GuindaBajo}"/>
+                    <TextBlock Text="20 salones disponibles — 12 horas/día cada uno — 1,200 horas semanales en total"
+                               FontSize="14" Foreground="#555555" Margin="0,6,0,0"/>
+                </StackPanel>
+
+                <Button Grid.Column="1"
+                        x:Name="BotonAgregarSalon"
+                        Content="+ Agregar Salón"
+                        Padding="15,8" FontSize="14" Width="160"
+                        Click="AgregarSalon_Click"/>
+            </Grid>
+
+            <!-- PANEL FORMULARIO (oculto por defecto) -->
+            <Border x:Name="PanelFormulario"
+                    Visibility="Collapsed"
+                    Background="White"
+                    CornerRadius="10"
+                    Padding="24" Margin="0,0,0,20"
+                    BorderBrush="#CCCCCC" BorderThickness="1">
+                <StackPanel>
+                    <TextBlock x:Name="TituloFormulario"
+                               Text="AGREGAR SALÓN"
+                               FontSize="16" FontWeight="Bold"
+                               Foreground="{StaticResource GuindaBajo}"
+                               HorizontalAlignment="Center" Margin="0,0,0,16"/>
+
+                    <TextBlock Text="Nombre del salón:" FontSize="13" Foreground="#444" Margin="0,0,0,4"/>
+                    <TextBox x:Name="TextboxNombreSalon"
+                             Height="35" Padding="8" Margin="0,0,0,12"
+                             BorderBrush="#CCCCCC" BorderThickness="1"/>
+
+                    <TextBlock Text="Capacidad (alumnos):" FontSize="13" Foreground="#444" Margin="0,0,0,4"/>
+                    <TextBox x:Name="TextboxCapacidad"
+                             Height="35" Padding="8" Margin="0,0,0,12"
+                             BorderBrush="#CCCCCC" BorderThickness="1"
+                             Text="40"/>
+
+                    <TextBlock Text="Edificio:" FontSize="13" Foreground="#444" Margin="0,0,0,4"/>
+                    <ComboBox x:Name="ComboBoxEdificio"
+                              Height="35" Margin="0,0,0,16"/>
+
+                    <StackPanel Orientation="Horizontal" HorizontalAlignment="Center">
+                        <Button x:Name="BotonGuardarSalon"
+                                Content="Guardar"
+                                Padding="20,10" Margin="0,0,10,0"
+                                Background="{StaticResource GuindaBajo}"
+                                Click="GuardarSalon_Click"/>
+                        <Button Content="Cancelar"
+                                Padding="20,10"
+                                Background="#CCCCCC" Foreground="Black"
+                                Click="CancelarSalon_Click"/>
+                    </StackPanel>
+                </StackPanel>
+            </Border>
+
+            <!-- RESUMEN DE CAPACIDAD -->
+            <Border Background="#FFF8E1" CornerRadius="8"
+                    Padding="16,10" Margin="0,0,0,20"
+                    BorderBrush="#FFE082" BorderThickness="1">
+                <Grid>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="*"/>
+                    </Grid.ColumnDefinitions>
+                    <StackPanel HorizontalAlignment="Center">
+                        <TextBlock Text="🏢 Total Salones"
+                                   FontSize="12" Foreground="#888" HorizontalAlignment="Center"/>
+                        <TextBlock x:Name="TxtTotalSalones"
+                                   Text="20"
+                                   FontSize="22" FontWeight="Bold"
+                                   Foreground="{StaticResource GuindaBajo}"
+                                   HorizontalAlignment="Center"/>
+                    </StackPanel>
+                    <StackPanel Grid.Column="1" HorizontalAlignment="Center">
+                        <TextBlock Text="⏰ Horas/día por salón"
+                                   FontSize="12" Foreground="#888" HorizontalAlignment="Center"/>
+                        <TextBlock Text="12h"
+                                   FontSize="22" FontWeight="Bold"
+                                   Foreground="#E65100"
+                                   HorizontalAlignment="Center"/>
+                    </StackPanel>
+                    <StackPanel Grid.Column="2" HorizontalAlignment="Center">
+                        <TextBlock Text="📅 Horas semanales totales"
+                                   FontSize="12" Foreground="#888" HorizontalAlignment="Center"/>
+                        <TextBlock x:Name="TxtHorasSemanales"
+                                   Text="1,200h"
+                                   FontSize="22" FontWeight="Bold"
+                                   Foreground="#2E7D32"
+                                   HorizontalAlignment="Center"/>
+                    </StackPanel>
+                </Grid>
+            </Border>
+
+            <!-- LISTA DE SALONES -->
+            <StackPanel x:Name="ListaSalones"/>
+
+        </StackPanel>
+    </ScrollViewer>
+</UserControl>

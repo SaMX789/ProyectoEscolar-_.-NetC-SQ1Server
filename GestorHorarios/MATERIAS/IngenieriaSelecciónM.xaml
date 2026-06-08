@@ -1,0 +1,132 @@
+﻿<UserControl x:Class="GestorHorarios.MATERIAS.IngenieriaSeleccionM"
+      xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+      xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+      xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006" 
+      xmlns:d="http://schemas.microsoft.com/expression/blend/2008" 
+      mc:Ignorable="d" 
+      d:DesignHeight="450" d:DesignWidth="800"
+      Background="{StaticResource ColorWhitesmoke}">
+
+    <UserControl.Resources>
+        <Style x:Key="MateriaCardStyle" TargetType="Border">
+            <Setter Property="Background" Value="White"/>
+            <Setter Property="CornerRadius" Value="8"/>
+            <Setter Property="Margin" Value="0,6"/>
+            <Setter Property="Padding" Value="12"/>
+            <Setter Property="Effect">
+                <Setter.Value>
+                    <DropShadowEffect Color="#DDDDDD" Direction="270" ShadowDepth="2" BlurRadius="8" Opacity="0.25"/>
+                </Setter.Value>
+            </Setter>
+        </Style>
+    </UserControl.Resources>
+
+    <ScrollViewer VerticalScrollBarVisibility="Auto">
+        <StackPanel Margin="40,30" MaxWidth="1200" HorizontalAlignment="Center">
+            <Grid Margin="0,0,0,20">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="Auto"/>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="Auto"/>
+                </Grid.ColumnDefinitions>
+
+                <Button Grid.Column="0"
+                        Content="Volver"
+                        Padding="15,8"
+                        Width="110"
+                        FontSize="14"
+                        Click="VolverCarreras_Click"
+                        Background="{StaticResource RosaOscuro}"/>
+
+                <TextBlock x:Name="TituloCarrera" Padding="0,0,0,0"
+                           Grid.Column="1"
+                           Text="Materias de la carrera de:"
+                           FontSize="24"
+                           
+                           FontWeight="Bold"
+                           Foreground="{StaticResource GuindaBajo}"
+                           HorizontalAlignment="Center"
+                           Margin="5,0,5,0"
+                           VerticalAlignment="Top"/>
+                
+                
+
+                <Button Grid.Column="2"
+                        x:Name="BotonMostrarAgregarMaterias"
+                        Content="Agregar materias"
+                        Padding="15,8"
+                        FontSize="14"
+                        Width="170"
+                        Click="BotonMostrarAgregarMaterias_Click"/>
+            </Grid>
+            <StackPanel x:Name="PanelFormularioMateria" Visibility="Collapsed">
+                <StackPanel Margin="10,10,10,10">
+                    <Border Style="{StaticResource MateriaCardStyle}" Height="Auto">
+                        <Grid>
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="Auto"/>
+                                <RowDefinition Height="Auto"/>
+                                <RowDefinition Height="Auto"/>
+                                <RowDefinition Height="Auto"/>
+                                <RowDefinition Height="Auto"/>
+                                <RowDefinition Height="Auto"/>
+                                <RowDefinition Height="Auto"/>
+                                <RowDefinition Height="Auto"/>
+                            </Grid.RowDefinitions>
+                    <TextBlock Text="AGREGAR MATERIAS" 
+                               Grid.Row="0"
+                               FontSize="18"
+                               HorizontalAlignment="Center"
+                               Foreground="{StaticResource negroTitulos}"
+                               FontWeight="Bold"
+                               />
+                    <TextBlock Text="Nombre de la materia"
+                               Grid.Row="1"
+                               FontSize="15"
+                               Foreground="{StaticResource negroTitulos}"
+                               FontWeight="DemiBold"
+                               Margin="0,10,0,10"
+                               />
+                            <TextBox Grid.Row="2"
+                                     Name="TextboxNombreMateria"/>
+                            <TextBlock Text="Clave"
+                                Grid.Row="3"
+                                FontSize="15"
+                                Foreground="{StaticResource negroTitulos}"
+                                FontWeight="DemiBold"
+                               Margin="0,10,0,10"
+                                />
+                            <TextBox Grid.Row="4"
+                                     Name="TextboxClave"/>
+                            <TextBlock Text="Total de créditos"
+                                Grid.Row="5"
+                                FontSize="15"
+                                Foreground="{StaticResource negroTitulos}"
+                                FontWeight="DemiBold"
+                               Margin="0,10,0,10"
+                                />
+                            <TextBox Grid.Row="6"
+                                     Name="TextboxTotalCreditos"/>
+                            <Button Grid.Row="7" 
+                                    Name="BotonGuardarMaterias"
+                                    Height="18" 
+                                    Width="100" 
+                                    HorizontalAlignment="Left"
+                                    Content="Guardar"
+                                    Foreground="{StaticResource ColorWhitesmoke}"
+                                    Margin="0,10,0,10"
+                                    Click="BotonGuardarMaterias_Click"/>
+                        </Grid>
+                    </Border>
+                </StackPanel>
+                
+            </StackPanel>
+
+            <!-- PLANTILLA MATERIAS AGRUPADAS POR SEMESTRE -->
+            <StackPanel x:Name="ListaMaterias">
+            </StackPanel>
+
+
+        </StackPanel>
+    </ScrollViewer>
+</UserControl>

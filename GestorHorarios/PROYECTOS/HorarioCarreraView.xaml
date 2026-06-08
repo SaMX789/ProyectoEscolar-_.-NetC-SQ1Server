@@ -1,0 +1,43 @@
+<UserControl x:Class="GestorHorarios.PROYECTOS.HorarioCarreraView"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             mc:Ignorable="d"
+             d:DesignHeight="800" d:DesignWidth="1200"
+             Background="{StaticResource ColorWhitesmoke}">
+
+    <ScrollViewer VerticalScrollBarVisibility="Auto">
+        <StackPanel Margin="30,25" MaxWidth="1300" HorizontalAlignment="Center">
+
+            <!-- ENCABEZADO -->
+            <Grid Margin="0,0,0,20">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="Auto"/>
+                    <ColumnDefinition Width="*"/>
+                </Grid.ColumnDefinitions>
+
+                <Button Grid.Column="0"
+                        Content="&#x2190; Volver al Proyecto"
+                        Padding="15,8,15,8" FontSize="13"
+                        Background="{StaticResource RosaOscuro}"
+                        Click="Volver_Click"
+                        Margin="0,0,15,0"/>
+
+                <StackPanel Grid.Column="1" VerticalAlignment="Center">
+                    <TextBlock x:Name="TxtTitulo"
+                               Text="Horarios"
+                               FontSize="22" FontWeight="Bold"
+                               Foreground="{StaticResource GuindaBajo}"/>
+                    <TextBlock x:Name="TxtSubtitulo"
+                               Text=""
+                               FontSize="13" Foreground="#888888"
+                               Margin="0,3,0,0"/>
+                </StackPanel>
+            </Grid>
+
+            <!-- CONTENEDOR DE GRUPOS -->
+            <StackPanel x:Name="PanelGrupos"/>
+        </StackPanel>
+    </ScrollViewer>
+</UserControl>
