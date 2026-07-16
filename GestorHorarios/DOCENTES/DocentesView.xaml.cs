@@ -1,10 +1,8 @@
-using System;
-using System.Data;
-using System.Windows;
-using System.Windows.Controls;
-using System.Windows.Input;
 using GestorHorarios.Services;
 using Microsoft.Data.SqlClient;
+using System.Data;
+using System.Windows.Controls;
+using System.Windows.Input;
 
 namespace GestorHorarios.DOCENTES
 {

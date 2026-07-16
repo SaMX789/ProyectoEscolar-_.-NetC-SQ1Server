@@ -1,11 +1,4 @@
-﻿using System;
-using System.Collections.Generic;
-using System.Data;
-using System.Globalization;
-using System.Windows;
-using System.Windows.Controls;
-using System.Windows.Media;
-using GestorHorarios.DOCENTES;
+﻿using GestorHorarios.DOCENTES;
 using GestorHorarios.GRUPOS;
 using GestorHorarios.MATERIAS;
 using GestorHorarios.Models;
@@ -13,6 +6,10 @@ using GestorHorarios.PROYECTOS;
 using GestorHorarios.SALONES;
 using GestorHorarios.Services;
 using Microsoft.Data.SqlClient;
+using System.Globalization;
+using System.Windows;
+using System.Windows.Controls;
+using System.Windows.Media;
 
 namespace GestorHorarios
 {

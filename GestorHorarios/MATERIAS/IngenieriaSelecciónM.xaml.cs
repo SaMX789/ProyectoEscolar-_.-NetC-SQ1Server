@@ -1,12 +1,9 @@
-﻿using System;
+﻿using GestorHorarios.Models;
+using GestorHorarios.Services;
+using Microsoft.Data.SqlClient;
+using System.Data;
 using System.Windows;
 using System.Windows.Controls;
-using GestorHorarios.Models;
-using GestorHorarios.Services;
-using System.Data;
-using Microsoft.Data.SqlClient;
-using System.Linq;
-using System.Collections.Generic;
 
 
 namespace GestorHorarios.MATERIAS
@@ -19,7 +16,7 @@ namespace GestorHorarios.MATERIAS
         {
             InitializeComponent();
             _idCarrera = idCarrera;
-            TituloCarrera.Text =  ObtenerNombreCarrera();
+            TituloCarrera.Text = ObtenerNombreCarrera();
             CargarMaterias();
         }
 

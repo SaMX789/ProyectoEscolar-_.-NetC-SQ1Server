@@ -1,11 +1,10 @@
-using System;
+using GestorHorarios.Models;
+using GestorHorarios.Services;
+using Microsoft.Data.SqlClient;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Media;
-using GestorHorarios.Models;
-using GestorHorarios.Services;
-using Microsoft.Data.SqlClient;
 
 namespace GestorHorarios.PROYECTOS
 {
