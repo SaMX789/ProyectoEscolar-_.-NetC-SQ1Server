@@ -27,6 +27,7 @@ namespace GestorHorarios.Models
 
         // Lista de ids de carreras secundarias
         public List<int> CarrerasSecundariasIds { get; set; } = new();
+        public string Nombre { get; internal set; }
     }
 
     public class Carrera

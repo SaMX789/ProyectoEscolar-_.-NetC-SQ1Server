@@ -1,6 +1,6 @@
-﻿using System.Windows;
+﻿using GestorHorarios.Services;
+using System.Windows;
 using System.Windows.Controls;
-using GestorHorarios.Services;
 
 namespace GestorHorarios.SALONES
 {

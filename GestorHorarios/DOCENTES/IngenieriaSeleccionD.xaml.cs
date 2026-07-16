@@ -1,15 +1,12 @@
-﻿using System;
-using System.Collections.Generic;
+﻿using GestorHorarios.Models;
+using GestorHorarios.Services;
+using Microsoft.Data.SqlClient;
 using System.Data;
-using System.Linq;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Media;
 using System.Windows.Shapes;
-using GestorHorarios.Models;
-using GestorHorarios.Services;
-using Microsoft.Data.SqlClient;
 
 namespace GestorHorarios.DOCENTES
 {

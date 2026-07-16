@@ -1,9 +1,6 @@
-﻿using GestorHorarios.MATERIAS;
-using GestorHorarios.Services;
+﻿using GestorHorarios.Services;
 using Microsoft.Data.SqlClient;
-using System;
 using System.Data;
-using System.Windows;
 using System.Windows.Controls;
 
 namespace GestorHorarios.MATERIAS

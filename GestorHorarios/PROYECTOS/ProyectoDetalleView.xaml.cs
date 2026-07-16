@@ -1,14 +1,11 @@
-using System;
-using System.Collections.Generic;
-using System.Data;
+using GestorHorarios.Models;
+using GestorHorarios.Services;
+using Microsoft.Data.SqlClient;
 using System.Globalization;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Media;
-using GestorHorarios.Models;
-using GestorHorarios.Services;
-using Microsoft.Data.SqlClient;
 
 namespace GestorHorarios.PROYECTOS
 {
@@ -152,12 +149,40 @@ namespace GestorHorarios.PROYECTOS
             catch { return 0; }
         }
 
-        private void CarreraCard_Click(object sender, MouseButtonEventArgs e)
+        private async void CarreraCard_Click(object sender, MouseButtonEventArgs e)
         {
             if (sender is Border border && border.Tag is int idCarrera)
             {
-                NavigationService.GetFromWindow(this)?.NavigateTo(
-                    new HorarioCarreraView(_proyecto, idCarrera));
+                Mouse.OverrideCursor = Cursors.Wait;
+
+                try
+                {
+                    var generador = new GeneradorHorariosService();
+
+                    // Ahora recibimos un reporte de texto
+                    string resultado = await generador.EjecutarDiagnosticoAsync(_proyecto.IdProyecto, idCarrera);
+
+                    // Analizamos qué nos respondió el sistema
+                    if (resultado.StartsWith("EXITO"))
+                    {
+                        // Mostramos cuántos insertó y luego navegamos
+                        MessageBox.Show(resultado, "Horario Generado", MessageBoxButton.OK, MessageBoxImage.Information);
+                        NavigationService.GetFromWindow(this)?.NavigateTo(new HorarioCarreraView(_proyecto, idCarrera));
+                    }
+                    else
+                    {
+                        // Si hubo cualquier error, lo mostramos y NO navegamos
+                        MessageBox.Show(resultado, "Reporte del Motor", MessageBoxButton.OK, MessageBoxImage.Warning);
+                    }
+                }
+                catch (Exception ex)
+                {
+                    MessageBox.Show($"Ocurrió un error inesperado de C#: {ex.Message}", "Error", MessageBoxButton.OK, MessageBoxImage.Error);
+                }
+                finally
+                {
+                    Mouse.OverrideCursor = null;
+                }
             }
         }
 
