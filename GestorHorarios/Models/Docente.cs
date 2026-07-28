@@ -28,6 +28,9 @@ namespace GestorHorarios.Models
         // Lista de ids de carreras secundarias
         public List<int> CarrerasSecundariasIds { get; set; } = new();
         public string Nombre { get; internal set; }
+
+        // Colección temporal para que OR-Tools busque rápidamente los bloques libres (ej. "1_3")
+        public HashSet<string> DisponibilidadBloques { get; set; } = new();
     }
 
     public class Carrera

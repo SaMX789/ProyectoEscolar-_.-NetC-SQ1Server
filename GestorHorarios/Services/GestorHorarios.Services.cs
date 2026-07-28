@@ -27,38 +27,61 @@ namespace GestorHorarios.Services
 
                     if (docentes.Count == 0)
                     {
-                        docentes.Add(new Docente { IdDocente = 1, Nombre = "Sin Maestro Asignado" });
+                        docentes.Add(new Docente { IdDocente = 1, NombreCompleto = "Sin Maestro Asignado", MateriasIds = new List<int>() });
                     }
 
                     int[] dias = { 1, 2, 3, 4, 5 };
-                    int[] bloques = { 0, 1, 3, 4, 5, 6 }; // Son 6 bloques diarios = 30 semanales
 
-                    // ESCÁNER DE EXCESO DE CRÉDITOS (Te dirá el error exacto en Civil/Industrial)
+                    // Turno Matutino: Bloques del 1 al 6 (7:30 a 13:30)
+                    int[] bloquesMatutinosBase = { 1, 2, 3, 4, 5, 6 };
+                    int bloqueExtendidoMatutino = 7; // Hora prestada: Bloque 7 (13:30 a 14:30)
+
+                    // Turno Vespertino: Bloques del 7 al 12 (13:30 a 19:30)
+                    int[] bloquesVespertinosBase = { 7, 8, 9, 10, 11, 12 };
+                    int bloqueExtendidoVespertino = 6; // Hora prestada: Bloque 6 (12:30 a 13:30)
+
+                    Dictionary<int, List<int>> bloquesPorGrupo = new Dictionary<int, List<int>>();
+
                     foreach (var g in grupos)
                     {
-                        var mats = materias.Where(m => m.Semestre == g.Semestre).ToList();
-                        int creditosTotales = mats.Sum(m => m.Creditos);
-                        int limiteHoras = dias.Length * bloques.Length; // 30 horas
+                        bool esMatutino = g.Turno.ToLower().Contains("matutino") || g.Turno.ToLower().StartsWith("m");
+                        List<int> bloquesDelGrupo = new List<int>(esMatutino ? bloquesMatutinosBase : bloquesVespertinosBase);
 
+                        int creditosTotales = materias.Where(m => m.Semestre == g.Semestre).Sum(m => m.Creditos);
+
+                        // Si el grupo exige más de 30 horas, habilitamos la hora extra
+                        if (creditosTotales > 30)
+                        {
+                            if (esMatutino)
+                                bloquesDelGrupo.Add(bloqueExtendidoMatutino);
+                            else
+                                bloquesDelGrupo.Insert(0, bloqueExtendidoVespertino);
+                        }
+
+                        int limiteHoras = dias.Length * bloquesDelGrupo.Count;
                         if (creditosTotales > limiteHoras)
                         {
-                            return $"ERROR BD: El grupo {g.Nombre} exige {creditosTotales} créditos, pero el turno matutino solo tiene {limiteHoras} horas en total. ¡Debes bajar los créditos en la BD o agregar una hora más de clase (ej. 13:30 - 14:30)!";
+                            return $"ERROR BD: El grupo {g.Nombre} exige {creditosTotales} créditos. Incluso con el horario extendido, el máximo posible es {limiteHoras} horas.";
                         }
+
+                        bloquesPorGrupo[g.IdGrupo] = bloquesDelGrupo;
                     }
 
                     CpModel model = new CpModel();
                     Dictionary<string, BoolVar> asignaciones = new Dictionary<string, BoolVar>();
                     Dictionary<string, BoolVar> grupoHoraActiva = new Dictionary<string, BoolVar>();
                     Dictionary<string, int> materiaDocenteAsignado = new Dictionary<string, int>();
+                    List<LinearExpr> penalizaciones = new List<LinearExpr>();
 
-                    // 1. CREAR VARIABLES
+                    // 1. CREAR VARIABLES Y ASIGNACIÓN RELACIONAL DE DOCENTES
                     foreach (var g in grupos)
                     {
                         var materiasDelGrupo = materias.Where(m => m.Semestre == g.Semestre).ToList();
+                        var bloquesPermitidos = bloquesPorGrupo[g.IdGrupo];
 
                         foreach (var d in dias)
                         {
-                            foreach (var b in bloques)
+                            foreach (var b in bloquesPermitidos)
                             {
                                 grupoHoraActiva[$"{g.IdGrupo}_{d}_{b}"] = model.NewBoolVar($"Activa_{g.IdGrupo}_{d}_{b}");
                             }
@@ -66,14 +89,25 @@ namespace GestorHorarios.Services
 
                         foreach (var m in materiasDelGrupo)
                         {
-                            int indexDocente = Math.Abs(m.IdMateria + g.IdGrupo) % docentes.Count;
-                            materiaDocenteAsignado[$"{g.IdGrupo}_{m.IdMateria}"] = docentes[indexDocente].IdDocente;
+                            var docentesCapaces = docentes.Where(doc => doc.MateriasIds.Contains(m.IdMateria)).ToList();
+
+                            Docente docenteElegido = docentesCapaces.Count > 0
+                                ? (docentesCapaces.FirstOrDefault(doc => doc.IdCarreraPrincipal == idCarrera) ?? docentesCapaces.First())
+                                : docentes.First();
+
+                            materiaDocenteAsignado[$"{g.IdGrupo}_{m.IdMateria}"] = docenteElegido.IdDocente;
 
                             foreach (var d in dias)
                             {
-                                foreach (var b in bloques)
+                                foreach (var b in bloquesPermitidos)
                                 {
-                                    asignaciones[$"{g.IdGrupo}_{m.IdMateria}_{d}_{b}"] = model.NewBoolVar($"X_{g.IdGrupo}_{m.IdMateria}_{d}_{b}");
+                                    var variableClase = model.NewBoolVar($"X_{g.IdGrupo}_{m.IdMateria}_{d}_{b}");
+                                    asignaciones[$"{g.IdGrupo}_{m.IdMateria}_{d}_{b}"] = variableClase;
+
+                                    if (b == bloqueExtendidoMatutino || b == bloqueExtendidoVespertino)
+                                    {
+                                        penalizaciones.Add(variableClase * 100);
+                                    }
                                 }
                             }
                         }
@@ -83,11 +117,12 @@ namespace GestorHorarios.Services
                     foreach (var g in grupos)
                     {
                         var materiasDelGrupo = materias.Where(m => m.Semestre == g.Semestre).ToList();
+                        var bloquesPermitidos = bloquesPorGrupo[g.IdGrupo];
 
                         // A. Control de Huecos en Blanco
                         foreach (var d in dias)
                         {
-                            foreach (var b in bloques)
+                            foreach (var b in bloquesPermitidos)
                             {
                                 var hVar = grupoHoraActiva[$"{g.IdGrupo}_{d}_{b}"];
                                 List<BoolVar> clasesEnEsteBloque = new List<BoolVar>();
@@ -101,17 +136,14 @@ namespace GestorHorarios.Services
                                 model.Add(hVar == LinearExpr.Sum(clasesEnEsteBloque));
                             }
 
-                            var h0 = grupoHoraActiva[$"{g.IdGrupo}_{d}_0"];
-                            var h1 = grupoHoraActiva[$"{g.IdGrupo}_{d}_1"];
-                            var h3 = grupoHoraActiva[$"{g.IdGrupo}_{d}_3"];
-                            var h4 = grupoHoraActiva[$"{g.IdGrupo}_{d}_4"];
-                            var h5 = grupoHoraActiva[$"{g.IdGrupo}_{d}_5"];
-                            var h6 = grupoHoraActiva[$"{g.IdGrupo}_{d}_6"];
+                            for (int i = 1; i < bloquesPermitidos.Count - 1; i++)
+                            {
+                                var prev = grupoHoraActiva[$"{g.IdGrupo}_{d}_{bloquesPermitidos[i - 1]}"];
+                                var curr = grupoHoraActiva[$"{g.IdGrupo}_{d}_{bloquesPermitidos[i]}"];
+                                var next = grupoHoraActiva[$"{g.IdGrupo}_{d}_{bloquesPermitidos[i + 1]}"];
 
-                            model.AddBoolOr(new ILiteral[] { h0.Not(), h1, h3.Not() });
-                            model.AddBoolOr(new ILiteral[] { h1.Not(), h3, h4.Not() });
-                            model.AddBoolOr(new ILiteral[] { h3.Not(), h4, h5.Not() });
-                            model.AddBoolOr(new ILiteral[] { h4.Not(), h5, h6.Not() });
+                                model.AddBoolOr(new ILiteral[] { prev.Not(), curr, next.Not() });
+                            }
                         }
 
                         // B. JUNTAR MATERIAS (Consecutivas) y CUMPLIR CRÉDITOS
@@ -124,14 +156,13 @@ namespace GestorHorarios.Services
                                 List<BoolVar> horasEsteDia = new List<BoolVar>();
                                 List<BoolVar> starts = new List<BoolVar>();
 
-                                for (int i = 0; i < bloques.Length; i++)
+                                for (int i = 0; i < bloquesPermitidos.Count; i++)
                                 {
-                                    var b = bloques[i];
+                                    var b = bloquesPermitidos[i];
                                     var x_curr = asignaciones[$"{g.IdGrupo}_{m.IdMateria}_{d}_{b}"];
                                     horasEsteDia.Add(x_curr);
                                     todasHorasMateria.Add(x_curr);
 
-                                    // Lógica para saber si es el "inicio" de un bloque de clases
                                     var is_start = model.NewBoolVar($"start_{g.IdGrupo}_{m.IdMateria}_{d}_{b}");
                                     starts.Add(is_start);
 
@@ -141,7 +172,7 @@ namespace GestorHorarios.Services
                                     }
                                     else
                                     {
-                                        var prev_b = bloques[i - 1];
+                                        var prev_b = bloquesPermitidos[i - 1];
                                         var x_prev = asignaciones[$"{g.IdGrupo}_{m.IdMateria}_{d}_{prev_b}"];
 
                                         model.AddImplication(is_start, x_curr);
@@ -150,26 +181,25 @@ namespace GestorHorarios.Services
                                     }
                                 }
 
-                                // 1. Máximo 1 "inicio" por día (Obliga a que si hay 2 horas, estén pegadas)
                                 model.Add(LinearExpr.Sum(starts) <= 1);
-
-                                // 2. Máximo 2 horas al día de la misma materia (para que no aburra a los alumnos)
                                 model.Add(LinearExpr.Sum(horasEsteDia) <= 2);
                             }
-
-                            // 3. Cumplir la cuota de créditos semanal
                             model.Add(LinearExpr.Sum(todasHorasMateria) == m.Creditos);
                         }
                     }
 
+                    // 3. OBJETIVO
+                    model.Minimize(LinearExpr.Sum(penalizaciones));
+
                     CpSolver solver = new CpSolver();
-                    solver.StringParameters = "max_time_in_seconds: 20.0"; // Un poco más de tiempo por la regla de juntas
+                    solver.StringParameters = "max_time_in_seconds: 25.0";
                     CpSolverStatus status = solver.Solve(model);
 
                     if (status == CpSolverStatus.Optimal || status == CpSolverStatus.Feasible)
                     {
-                        int insertados = GuardarResultadosEnDB(idProyecto, grupos, materias, dias, bloques, materiaDocenteAsignado, asignaciones, solver);
-                        return $"EXITO: Horario generado sin dispersión. Se insertaron {insertados} registros.";
+                        // AQUÍ PASAMOS EL idCarrera A LA FUNCIÓN DE GUARDADO
+                        int insertados = GuardarResultadosEnDB(idProyecto, idCarrera, grupos, materias, dias, bloquesPorGrupo, materiaDocenteAsignado, asignaciones, solver);
+                        return $"EXITO: Horario generado sin dispersión. Se insertaron {insertados} registros. Costo extendido: {solver.ObjectiveValue}";
                     }
                     else if (status == CpSolverStatus.Infeasible)
                     {
@@ -180,7 +210,7 @@ namespace GestorHorarios.Services
                 }
                 catch (Exception ex)
                 {
-                    return $"EXCEPCIÓN CRÍTICA: {ex.Message}";
+                    return $"EXCEPCIÓN CRÍTICA: {ex.Message}\n\nStack: {ex.StackTrace}";
                 }
             });
         }
@@ -234,45 +264,102 @@ namespace GestorHorarios.Services
 
         private List<Docente> ObtenerDocentesDeDB(int idCarrera)
         {
-            var docentes = new List<Docente>();
+            var dictDocentes = new Dictionary<int, Docente>();
             using var conn = new SqlConnection(DatabaseService.GetConnectionString());
-            using var cmd = new SqlCommand("sp_GetDocentesByCarrera", conn);
-            cmd.CommandType = System.Data.CommandType.StoredProcedure;
-            cmd.Parameters.AddWithValue("@id_carrera", idCarrera);
-
             conn.Open();
-            using var reader = cmd.ExecuteReader();
-            while (reader.Read())
+
+            using (var cmd = new SqlCommand("sp_GetDocentesByCarrera", conn))
             {
-                docentes.Add(new Docente
+                cmd.CommandType = System.Data.CommandType.StoredProcedure;
+                cmd.Parameters.AddWithValue("@id_carrera", idCarrera);
+
+                using var reader = cmd.ExecuteReader();
+                while (reader.Read())
                 {
-                    IdDocente = Convert.ToInt32(reader["id_docente"]),
-                    Nombre = reader["NombreCompleto"].ToString() ?? ""
-                });
+                    int id = Convert.ToInt32(reader["id_docente"]);
+                    dictDocentes[id] = new Docente
+                    {
+                        IdDocente = id,
+                        NombreCompleto = reader["NombreCompleto"].ToString() ?? "",
+                        Nombre = reader["NombreCompleto"].ToString() ?? "",
+                        TipoTiempo = reader["TipoTiempo"].ToString() ?? "",
+                        HorasMaximas = reader["HorasMaximas"] != DBNull.Value ? Convert.ToInt32(reader["HorasMaximas"]) : 20,
+                        IdCarreraPrincipal = reader["IdCarreraPrincipal"] != DBNull.Value ? Convert.ToInt32(reader["IdCarreraPrincipal"]) : 0,
+                        CarreraPrincipal = reader["CarreraPrincipal"].ToString() ?? "",
+                        HorasAsignadas = reader["HorasAsignadas"] != DBNull.Value ? Convert.ToInt32(reader["HorasAsignadas"]) : 0,
+                        MateriasIds = new List<int>(),
+                        DisponibilidadBloques = new HashSet<string>()
+                    };
+                }
             }
-            return docentes;
+
+            if (dictDocentes.Count > 0)
+            {
+                string idsDocentes = string.Join(",", dictDocentes.Keys);
+
+                string queryMaterias = $"SELECT id_docente, id_materia FROM DocenteMateria WHERE id_docente IN ({idsDocentes})";
+                using (var cmdMat = new SqlCommand(queryMaterias, conn))
+                using (var readerMat = cmdMat.ExecuteReader())
+                {
+                    while (readerMat.Read())
+                    {
+                        int idDoc = Convert.ToInt32(readerMat["id_docente"]);
+                        int idMat = Convert.ToInt32(readerMat["id_materia"]);
+                        if (dictDocentes.ContainsKey(idDoc))
+                        {
+                            dictDocentes[idDoc].MateriasIds.Add(idMat);
+                        }
+                    }
+                }
+
+                string queryDisp = $"SELECT id_docente, id_dia, id_bloque FROM DisponibilidadDocente WHERE id_docente IN ({idsDocentes})";
+                using (var cmdDisp = new SqlCommand(queryDisp, conn))
+                using (var readerDisp = cmdDisp.ExecuteReader())
+                {
+                    while (readerDisp.Read())
+                    {
+                        int idDoc = Convert.ToInt32(readerDisp["id_docente"]);
+                        string bloque = $"{readerDisp["id_dia"]}_{readerDisp["id_bloque"]}";
+                        if (dictDocentes.ContainsKey(idDoc))
+                        {
+                            dictDocentes[idDoc].DisponibilidadBloques.Add(bloque);
+                        }
+                    }
+                }
+            }
+
+            return dictDocentes.Values.ToList();
         }
 
-        private int GuardarResultadosEnDB(int idProyecto, List<Grupo> grupos, List<Materia> materias, int[] dias, int[] bloques, Dictionary<string, int> materiaDocenteAsignado, Dictionary<string, BoolVar> asignaciones, CpSolver solver)
+        // AQUÍ RECIBIMOS EL idCarrera PARA BORRAR SOLO LOS DATOS PERTINENTES
+        private int GuardarResultadosEnDB(int idProyecto, int idCarrera, List<Grupo> grupos, List<Materia> materias, int[] dias, Dictionary<int, List<int>> bloquesPorGrupo, Dictionary<string, int> materiaDocenteAsignado, Dictionary<string, BoolVar> asignaciones, CpSolver solver)
         {
             int contadorInsert = 0;
             using var conn = new SqlConnection(DatabaseService.GetConnectionString());
             conn.Open();
 
-            using (var cmdDelete = new SqlCommand("DELETE FROM HorarioDetalle WHERE id_proyecto = @id", conn))
+            // CONSULTA CORREGIDA: Usa INNER JOIN para borrar solo los horarios de los grupos que pertenecen a la carrera actual
+            using (var cmdDelete = new SqlCommand(@"
+                DELETE hd 
+                FROM HorarioDetalle hd
+                INNER JOIN Grupos g ON hd.id_grupo = g.id_grupo
+                WHERE hd.id_proyecto = @idProj AND g.id_carrera = @idCarrera", conn))
             {
-                cmdDelete.Parameters.AddWithValue("@id", idProyecto);
+                cmdDelete.Parameters.AddWithValue("@idProj", idProyecto);
+                cmdDelete.Parameters.AddWithValue("@idCarrera", idCarrera);
                 cmdDelete.ExecuteNonQuery();
             }
 
             foreach (var g in grupos)
             {
                 var materiasDelGrupo = materias.Where(m => m.Semestre == g.Semestre).ToList();
+                var bloquesPermitidos = bloquesPorGrupo[g.IdGrupo];
+
                 foreach (var m in materiasDelGrupo)
                 {
                     foreach (var d in dias)
                     {
-                        foreach (var b in bloques)
+                        foreach (var b in bloquesPermitidos)
                         {
                             string key = $"{g.IdGrupo}_{m.IdMateria}_{d}_{b}";
 

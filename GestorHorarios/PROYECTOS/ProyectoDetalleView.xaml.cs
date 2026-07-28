@@ -1,6 +1,8 @@
 using GestorHorarios.Models;
 using GestorHorarios.Services;
 using Microsoft.Data.SqlClient;
+using System;
+using System.Collections.Generic;
 using System.Globalization;
 using System.Windows;
 using System.Windows.Controls;
@@ -52,6 +54,35 @@ namespace GestorHorarios.PROYECTOS
 
         #endregion
 
+        #region Verificación de Estado en Base de Datos
+
+        // NUEVO MÉTODO: Revisa si ya existen horarios guardados para esta carrera en este proyecto
+        private bool TieneHorarioGenerado(int idProyecto, int idCarrera)
+        {
+            try
+            {
+                using var conn = new SqlConnection(DatabaseService.GetConnectionString());
+                using var cmd = new SqlCommand(@"
+                    SELECT COUNT(*) 
+                    FROM HorarioDetalle hd
+                    INNER JOIN Grupos g ON hd.id_grupo = g.id_grupo
+                    WHERE hd.id_proyecto = @idProyecto AND g.id_carrera = @idCarrera", conn);
+
+                cmd.Parameters.AddWithValue("@idProyecto", idProyecto);
+                cmd.Parameters.AddWithValue("@idCarrera", idCarrera);
+
+                conn.Open();
+                int count = Convert.ToInt32(cmd.ExecuteScalar());
+                return count > 0;
+            }
+            catch
+            {
+                return false;
+            }
+        }
+
+        #endregion
+
         #region Carreras
 
         private void CargarCarreras()
@@ -73,6 +104,7 @@ namespace GestorHorarios.PROYECTOS
                     });
                 }
 
+                // Usamos los códigos Unicode originales
                 string[] iconos = { "\U0001F4BB", "\U0001F3D7", "\U0001F331", "\U0001F4CA", "\u2699", "\U0001F9EA" };
 
                 for (int i = 0; i < carreras.Count; i++)
@@ -82,6 +114,9 @@ namespace GestorHorarios.PROYECTOS
                     int col = i % 3;
                     string icono = i < iconos.Length ? iconos[i] : "\U0001F4CB";
 
+                    // Verificamos el estado en la base de datos
+                    bool estaGenerado = TieneHorarioGenerado(_proyecto.IdProyecto, carrera.IdCarrera);
+
                     var border = new Border
                     {
                         Style = (Style)FindResource("CarreraCardStyle"),
@@ -89,7 +124,9 @@ namespace GestorHorarios.PROYECTOS
                     };
                     border.MouseLeftButtonDown += CarreraCard_Click;
 
-                    var sp = new StackPanel { HorizontalAlignment = HorizontalAlignment.Center };
+                    var mainGrid = new Grid();
+
+                    var sp = new StackPanel { HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center };
                     sp.Children.Add(new TextBlock
                     {
                         Text = icono,
@@ -118,7 +155,22 @@ namespace GestorHorarios.PROYECTOS
                         Margin = new Thickness(0, 4, 0, 0)
                     });
 
-                    border.Child = sp;
+                    // Ícono de Estado (Palomita o X usando códigos)
+                    var statusIcon = new TextBlock
+                    {
+                        Text = estaGenerado ? "\u2714" : "\u274C",
+                        FontSize = 18,
+                        Foreground = new SolidColorBrush((Color)ColorConverter.ConvertFromString(estaGenerado ? "#2E7D32" : "#D32F2F")),
+                        HorizontalAlignment = HorizontalAlignment.Right,
+                        VerticalAlignment = VerticalAlignment.Top,
+                        Margin = new Thickness(0, -5, -5, 0),
+                        ToolTip = estaGenerado ? "Horario Generado" : "Horario Pendiente"
+                    };
+
+                    mainGrid.Children.Add(sp);
+                    mainGrid.Children.Add(statusIcon);
+
+                    border.Child = mainGrid;
                     Grid.SetRow(border, row);
                     Grid.SetColumn(border, col);
                     GridCarreras.Children.Add(border);
@@ -153,35 +205,39 @@ namespace GestorHorarios.PROYECTOS
         {
             if (sender is Border border && border.Tag is int idCarrera)
             {
-                Mouse.OverrideCursor = Cursors.Wait;
+                bool estaGenerado = TieneHorarioGenerado(_proyecto.IdProyecto, idCarrera);
 
-                try
+                if (estaGenerado)
                 {
-                    var generador = new GeneradorHorariosService();
-
-                    // Ahora recibimos un reporte de texto
-                    string resultado = await generador.EjecutarDiagnosticoAsync(_proyecto.IdProyecto, idCarrera);
-
-                    // Analizamos qué nos respondió el sistema
-                    if (resultado.StartsWith("EXITO"))
-                    {
-                        // Mostramos cuántos insertó y luego navegamos
-                        MessageBox.Show(resultado, "Horario Generado", MessageBoxButton.OK, MessageBoxImage.Information);
-                        NavigationService.GetFromWindow(this)?.NavigateTo(new HorarioCarreraView(_proyecto, idCarrera));
-                    }
-                    else
-                    {
-                        // Si hubo cualquier error, lo mostramos y NO navegamos
-                        MessageBox.Show(resultado, "Reporte del Motor", MessageBoxButton.OK, MessageBoxImage.Warning);
-                    }
+                    NavigationService.GetFromWindow(this)?.NavigateTo(new HorarioCarreraView(_proyecto, idCarrera));
                 }
-                catch (Exception ex)
+                else
                 {
-                    MessageBox.Show($"Ocurrió un error inesperado de C#: {ex.Message}", "Error", MessageBoxButton.OK, MessageBoxImage.Error);
-                }
-                finally
-                {
-                    Mouse.OverrideCursor = null;
+                    Mouse.OverrideCursor = Cursors.Wait;
+
+                    try
+                    {
+                        var generador = new GeneradorHorariosService();
+                        string resultado = await generador.EjecutarDiagnosticoAsync(_proyecto.IdProyecto, idCarrera);
+
+                        if (resultado.StartsWith("EXITO"))
+                        {
+                            MessageBox.Show(resultado, "Horario Generado", MessageBoxButton.OK, MessageBoxImage.Information);
+                            NavigationService.GetFromWindow(this)?.NavigateTo(new HorarioCarreraView(_proyecto, idCarrera));
+                        }
+                        else
+                        {
+                            MessageBox.Show(resultado, "Reporte del Motor", MessageBoxButton.OK, MessageBoxImage.Warning);
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        MessageBox.Show($"Ocurrió un error inesperado de C#: {ex.Message}", "Error", MessageBoxButton.OK, MessageBoxImage.Error);
+                    }
+                    finally
+                    {
+                        Mouse.OverrideCursor = null;
+                    }
                 }
             }
         }
