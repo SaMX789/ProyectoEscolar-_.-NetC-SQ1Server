@@ -1,7 +1,10 @@
 ﻿using GestorHorarios.Models;
 using GestorHorarios.Services;
 using Microsoft.Data.SqlClient;
+using System;
+using System.Collections.Generic;
 using System.Data;
+using System.Linq;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Media;
@@ -15,16 +18,36 @@ namespace GestorHorarios.PROYECTOS
         private readonly int _idCarrera;
         private string _nombreCarrera = "";
 
-        // Bloques matutino: 7:30-13:30 con receso 9:20-9:40
-        private static readonly string[] BLOQUES_MATUTINO = { "7:30 - 8:30", "8:30 - 9:20", "9:20 - 9:40", "9:40 - 10:30", "10:30 - 11:30", "11:30 - 12:30", "12:30 - 13:30" };
+        private class BloqueUI
+        {
+            public string Horario { get; set; }
+            public int IdBloque { get; set; }
+            public bool EsReceso { get; set; }
+        }
 
-        // Bloques vespertino: 13:30-19:30 con receso 15:20-15:40
-        private static readonly string[] BLOQUES_VESPERTINO = { "13:30 - 14:30", "14:30 - 15:20", "15:20 - 15:40", "15:40 - 16:30", "16:30 - 17:30", "17:30 - 18:30", "18:30 - 19:30" };
+        private static readonly List<BloqueUI> BLOQUES_MATUTINO = new List<BloqueUI>
+        {
+            new BloqueUI { Horario = "7:30 - 8:30", IdBloque = 1, EsReceso = false },
+            new BloqueUI { Horario = "8:30 - 9:20", IdBloque = 2, EsReceso = false },
+            new BloqueUI { Horario = "9:20 - 9:40", IdBloque = 0, EsReceso = true },
+            new BloqueUI { Horario = "9:40 - 10:30", IdBloque = 3, EsReceso = false },
+            new BloqueUI { Horario = "10:30 - 11:30", IdBloque = 4, EsReceso = false },
+            new BloqueUI { Horario = "11:30 - 12:30", IdBloque = 5, EsReceso = false },
+            new BloqueUI { Horario = "12:30 - 13:30", IdBloque = 6, EsReceso = false },
+            new BloqueUI { Horario = "13:30 - 14:30", IdBloque = 7, EsReceso = false }
+        };
 
-        // Indices de receso (posicion 2 en ambos arrays)
-        private const int INDICE_RECESO = 2;
-
-        private static readonly string[] DIAS = { "Lunes", "Martes", "Miércoles", "Jueves", "Viernes" };
+        private static readonly List<BloqueUI> BLOQUES_VESPERTINO = new List<BloqueUI>
+        {
+            new BloqueUI { Horario = "12:30 - 13:30", IdBloque = 6, EsReceso = false },
+            new BloqueUI { Horario = "13:30 - 14:30", IdBloque = 7, EsReceso = false },
+            new BloqueUI { Horario = "14:30 - 15:20", IdBloque = 8, EsReceso = false },
+            new BloqueUI { Horario = "15:20 - 15:40", IdBloque = 0, EsReceso = true },
+            new BloqueUI { Horario = "15:40 - 16:30", IdBloque = 9, EsReceso = false },
+            new BloqueUI { Horario = "16:30 - 17:30", IdBloque = 10, EsReceso = false },
+            new BloqueUI { Horario = "17:30 - 18:30", IdBloque = 11, EsReceso = false },
+            new BloqueUI { Horario = "18:30 - 19:30", IdBloque = 12, EsReceso = false }
+        };
 
         public HorarioCarreraView()
         {
@@ -40,8 +63,6 @@ namespace GestorHorarios.PROYECTOS
             CargarEncabezado();
             CargarGruposConTablas();
         }
-
-        #region Carga de datos originales
 
         private void CargarNombreCarrera()
         {
@@ -124,11 +145,6 @@ namespace GestorHorarios.PROYECTOS
             return materias;
         }
 
-        #endregion
-
-        #region Nuevos metodos para el Horario Generado
-
-        // METODO NUEVO: Consulta la BD para traer el horario ya generado
         private List<HorarioAsignado> ObtenerHorarioDelGrupo(int idGrupo)
         {
             var horarios = new List<HorarioAsignado>();
@@ -187,7 +203,6 @@ namespace GestorHorarios.PROYECTOS
 
                 foreach (var semGrupo in porSemestre)
                 {
-                    // Encabezado del semestre
                     string bgColor = _proyecto.Ciclo == "B" ? "#E8F5E9" : "#E3F2FD";
                     string fgColor = _proyecto.Ciclo == "B" ? "#2E7D32" : "#1565C0";
                     var headerBorder = new Border
@@ -258,8 +273,8 @@ namespace GestorHorarios.PROYECTOS
                 Foreground = (Brush)FindResource("GuindaBajo")
             });
 
-            bool esMatutino = grupo.Turno?.ToUpper() == "MATUTINO";
-            string turnoTexto = esMatutino ? "Matutino (7:30 - 13:30)" : "Vespertino (13:30 - 19:30)";
+            bool esMatutino = grupo.Turno?.ToLower().Contains("matutino") == true || grupo.Turno?.ToLower().StartsWith("m") == true;
+            string turnoTexto = esMatutino ? "Matutino (7:30 - 14:30 max)" : "Vespertino (12:30 - 19:30 max)";
             int totalHoras = materias.Sum(m => m.Creditos);
 
             grupoInfo.Children.Add(new TextBlock
@@ -274,14 +289,14 @@ namespace GestorHorarios.PROYECTOS
             headerGrid.Children.Add(grupoInfo);
             sp.Children.Add(headerGrid);
 
-            // AQUI SE MANDAN A TRAER LOS HORARIOS CALCULADOS DE ESTE GRUPO
             var horarioAsignado = ObtenerHorarioDelGrupo(grupo.IdGrupo);
-
-            // Tabla de horario (Le pasamos los datos a la cuadrícula)
             sp.Children.Add(CrearTablaHorario(esMatutino, horarioAsignado));
 
             if (materias.Count > 0)
-                sp.Children.Add(CrearTablaResumenMaterias(materias));
+            {
+                // Pasamos los horarios a la tabla resumen para que lea al maestro correcto
+                sp.Children.Add(CrearTablaResumenMaterias(materias, horarioAsignado));
+            }
 
             container.Child = sp;
             return container;
@@ -289,13 +304,13 @@ namespace GestorHorarios.PROYECTOS
 
         private Grid CrearTablaHorario(bool esMatutino, List<HorarioAsignado> horarioAsignado)
         {
-            string[] bloques = esMatutino ? BLOQUES_MATUTINO : BLOQUES_VESPERTINO;
+            var bloques = esMatutino ? BLOQUES_MATUTINO : BLOQUES_VESPERTINO;
             var grid = new Grid { Margin = new Thickness(0, 0, 0, 15) };
 
             for (int c = 0; c < 6; c++)
                 grid.ColumnDefinitions.Add(new ColumnDefinition { Width = c == 0 ? new GridLength(110) : new GridLength(1, GridUnitType.Star) });
 
-            for (int r = 0; r <= bloques.Length; r++)
+            for (int r = 0; r <= bloques.Count; r++)
                 grid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
 
             string[] encabezados = { "Hora", "Lunes", "Martes", "Miércoles", "Jueves", "Viernes" };
@@ -322,9 +337,10 @@ namespace GestorHorarios.PROYECTOS
                 grid.Children.Add(headerCell);
             }
 
-            for (int r = 0; r < bloques.Length; r++)
+            for (int r = 0; r < bloques.Count; r++)
             {
-                bool esReceso = r == INDICE_RECESO;
+                var bloqueActual = bloques[r];
+                bool esReceso = bloqueActual.EsReceso;
 
                 var horaCell = new Border
                 {
@@ -335,7 +351,7 @@ namespace GestorHorarios.PROYECTOS
                 };
                 horaCell.Child = new TextBlock
                 {
-                    Text = bloques[r],
+                    Text = bloqueActual.Horario,
                     FontSize = esReceso ? 10 : 11,
                     FontWeight = esReceso ? FontWeights.Bold : FontWeights.SemiBold,
                     Foreground = new SolidColorBrush((Color)ColorConverter.ConvertFromString(esReceso ? "#E65100" : "#333333")),
@@ -372,8 +388,7 @@ namespace GestorHorarios.PROYECTOS
                     }
                     else
                     {
-                        // AQUÍ CRUZAMOS LA CUADRÍCULA CON LOS DATOS DE LA BASE DE DATOS
-                        var claseActual = horarioAsignado.FirstOrDefault(h => h.DiaSemana == c && h.BloqueHora == r);
+                        var claseActual = horarioAsignado.FirstOrDefault(h => h.DiaSemana == c && h.BloqueHora == bloqueActual.IdBloque);
 
                         string textoCelda = claseActual != null ? $"{claseActual.NombreMateria}\n({claseActual.NombreDocente})" : "";
 
@@ -404,11 +419,8 @@ namespace GestorHorarios.PROYECTOS
             return grid;
         }
 
-        #endregion
-
-        #region Tabla Resumen y Navegacion (Original)
-
-        private Grid CrearTablaResumenMaterias(List<Materia> materias)
+        // LECTURA DINÁMICA: Ahora busca al maestro real para mostrarlo abajo
+        private Grid CrearTablaResumenMaterias(List<Materia> materias, List<HorarioAsignado> horarioAsignado)
         {
             var grid = new Grid { Margin = new Thickness(0, 5, 0, 0) };
 
@@ -449,10 +461,16 @@ namespace GestorHorarios.PROYECTOS
                 string bgColor = i % 2 == 0 ? "#FFFFFF" : "#F9F9F9";
                 var bg = new SolidColorBrush((Color)ColorConverter.ConvertFromString(bgColor));
 
+                // Buscamos si el motor logró asignarle un maestro a esta materia
+                var clase = horarioAsignado.FirstOrDefault(h => h.NombreMateria == m.Nombre);
+                string nombreDocente = clase != null && !string.IsNullOrEmpty(clase.NombreDocente) ? clase.NombreDocente : "(Por asignar)";
+
                 AgregarCeldaTexto(grid, i + 1, 0, m.Nombre, bg);
                 AgregarCeldaTexto(grid, i + 1, 1, m.Clave, bg);
                 AgregarCeldaTexto(grid, i + 1, 2, m.Creditos.ToString(), bg, HorizontalAlignment.Center);
-                AgregarCeldaTexto(grid, i + 1, 3, "(Por asignar)", bg, foreground: "#999999", esItalica: true);
+
+                // Pintamos de gris solo si no se pudo asignar
+                AgregarCeldaTexto(grid, i + 1, 3, nombreDocente, bg, foreground: clase != null ? "#333333" : "#999999", esItalica: clase == null);
             }
 
             return grid;
@@ -486,8 +504,6 @@ namespace GestorHorarios.PROYECTOS
         {
             NavigationService.GetFromWindow(this)?.NavigateTo(new ProyectoDetalleView(_proyecto));
         }
-
-        #endregion
 
         public class HorarioAsignado
         {

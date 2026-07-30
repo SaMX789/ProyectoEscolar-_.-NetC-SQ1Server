@@ -1,3 +1,5 @@
+using System.Collections.Generic;
+
 namespace GestorHorarios.Models
 {
     public class Docente
@@ -27,7 +29,11 @@ namespace GestorHorarios.Models
 
         // Lista de ids de carreras secundarias
         public List<int> CarrerasSecundariasIds { get; set; } = new();
+
         public string Nombre { get; internal set; }
+
+        // NUEVO: Colección para que el motor matemático guarde y lea la disponibilidad del maestro
+        public HashSet<string> DisponibilidadBloques { get; set; } = new();
     }
 
     public class Carrera
