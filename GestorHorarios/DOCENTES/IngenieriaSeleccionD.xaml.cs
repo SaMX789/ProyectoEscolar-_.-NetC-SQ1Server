@@ -358,17 +358,21 @@ namespace GestorHorarios.DOCENTES
 
         private void MarcarMateriasEnPaneles(List<int> ids)
         {
-            foreach (UIElement elemento in StackPanelMateriasImpartidas.Children)
+            // Función recursiva para encontrar y marcar CheckBoxes en modo Edición
+            void Marcar(UIElementCollection children)
             {
-                if (elemento is not Border brd || brd.Child is not StackPanel sp) continue;
-                foreach (UIElement hijo in sp.Children)
+                foreach (UIElement element in children)
                 {
-                    if (hijo is not StackPanel panelMaterias) continue;
-                    foreach (var cb in panelMaterias.Children.OfType<CheckBox>())
-                        if (cb.Tag is int id && ids.Contains(id))
-                            cb.IsChecked = true;
+                    if (element is CheckBox cb && cb.Tag is int id && ids.Contains(id))
+                        cb.IsChecked = true;
+                    else if (element is Panel panel)
+                        Marcar(panel.Children);
+                    else if (element is Border border && border.Child is Panel childPanel)
+                        Marcar(childPanel.Children);
                 }
             }
+
+            Marcar(StackPanelMateriasImpartidas.Children);
         }
 
         private void RestaurarHorarioEnCanvas(int idDocente)
@@ -606,26 +610,38 @@ namespace GestorHorarios.DOCENTES
 
         private UIElement BuildMateriasPanelForCareer(int idCarrera, string nombreCarrera, bool isMain)
         {
-            var border = new Border
+            // Contenedor principal de toda la carrera
+            var mainBorder = new Border
             {
                 Background = Brushes.White,
-                BorderBrush = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#EEEEEE")),
+                BorderBrush = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#DDDDDD")),
                 BorderThickness = new Thickness(1),
-                CornerRadius = new CornerRadius(6),
-                Padding = new Thickness(10),
-                Margin = new Thickness(0, 10, 0, 10),
-                Tag = idCarrera
+                CornerRadius = new CornerRadius(8),
+                Margin = new Thickness(0, 10, 0, 15),
+                Tag = idCarrera // Importante para la lógica interna
             };
 
-            var sp = new StackPanel();
-            sp.Children.Add(new TextBlock
+            var mainStack = new StackPanel();
+
+            // 1. Cabecera con color de la Carrera
+            var headerBorder = new Border
+            {
+                // Rosa bajito si es principal, gris claro si es secundaria
+                Background = new SolidColorBrush((Color)ColorConverter.ConvertFromString(isMain ? "#FCE4EC" : "#F5F5F5")),
+                CornerRadius = new CornerRadius(7, 7, 0, 0),
+                Padding = new Thickness(15, 10, 15, 10)
+            };
+
+            headerBorder.Child = new TextBlock
             {
                 Text = $"{(isMain ? "Principal" : "Secundaria")}: {nombreCarrera}",
                 FontSize = 14,
                 FontWeight = FontWeights.Bold,
-                Foreground = (Brush)FindResource("GuindaBajo"),
-                Margin = new Thickness(0, 0, 0, 8)
-            });
+                Foreground = (Brush)FindResource("GuindaBajo")
+            };
+            mainStack.Children.Add(headerBorder);
+            // 2. Contenedor de los Semestres
+            var contentStack = new StackPanel { Margin = new Thickness(15) };
 
             try
             {
@@ -634,23 +650,41 @@ namespace GestorHorarios.DOCENTES
 
                 foreach (var grupo in porSemestre)
                 {
-                    sp.Children.Add(new TextBlock
+                    // Tarjeta individual para aislar visualmente cada semestre
+                    var semesterBorder = new Border
                     {
-                        Text = $"Semestre {grupo.Key}:",
-                        FontSize = 12,
+                        Background = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#FAFAFA")),
+                        BorderBrush = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#EEEEEE")),
+                        BorderThickness = new Thickness(1),
+                        CornerRadius = new CornerRadius(6),
+                        Margin = new Thickness(0, 0, 0, 12),
+                        Padding = new Thickness(12)
+                    };
+
+                    var semesterStack = new StackPanel();
+
+                    semesterStack.Children.Add(new TextBlock
+                    {
+                        Text = $"Semestre {grupo.Key}",
+                        FontSize = 13,
                         FontWeight = FontWeights.SemiBold,
-                        Foreground = (Brush)FindResource("negroTitulos"),
-                        Margin = new Thickness(0, 6, 0, 4)
+                        Foreground = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#444444")),
+                        Margin = new Thickness(0, 0, 0, 8)
                     });
 
-                    var panelMaterias = new StackPanel { Orientation = Orientation.Horizontal };
+                    // WRAPPANEL: La magia para que las cajas bajen de renglón automáticamente
+                    var panelMaterias = new WrapPanel { Orientation = Orientation.Horizontal };
+
                     foreach (var materia in grupo)
                     {
                         var cb = new CheckBox
                         {
                             Content = materia.Nombre,
                             Tag = materia.IdMateria,
-                            Margin = new Thickness(0, 0, 12, 0)
+                            Margin = new Thickness(0, 0, 15, 8),
+                            FontSize = 12,
+                            Foreground = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#555555")),
+                            Cursor = Cursors.Hand
                         };
                         cb.Checked += MateriaCb_Changed;
                         cb.Unchecked += MateriaCb_Changed;
@@ -658,21 +692,26 @@ namespace GestorHorarios.DOCENTES
 
                         _todasLasMaterias[materia.IdMateria] = materia.Nombre;
                     }
-                    sp.Children.Add(panelMaterias);
+
+                    semesterStack.Children.Add(panelMaterias);
+                    semesterBorder.Child = semesterStack;
+                    contentStack.Children.Add(semesterBorder);
                 }
 
                 if (!materias.Any())
-                    sp.Children.Add(new TextBlock
+                {
+                    contentStack.Children.Add(new TextBlock
                     {
                         Text = "No hay materias registradas para esta carrera.",
                         FontSize = 12,
                         Foreground = Brushes.Gray,
                         FontStyle = FontStyles.Italic
                     });
+                }
             }
             catch (Exception ex)
             {
-                sp.Children.Add(new TextBlock
+                contentStack.Children.Add(new TextBlock
                 {
                     Text = $"Error cargando materias: {ex.Message}",
                     Foreground = Brushes.Red,
@@ -680,8 +719,10 @@ namespace GestorHorarios.DOCENTES
                 });
             }
 
-            border.Child = sp;
-            return border;
+            mainStack.Children.Add(contentStack);
+            mainBorder.Child = mainStack;
+
+            return mainBorder;
         }
 
         private static List<Materia> CargarMateriasDeBD(int idCarrera)
@@ -746,21 +787,21 @@ namespace GestorHorarios.DOCENTES
         {
             _materiasSeleccionadasIds.Clear();
 
-            foreach (UIElement elemento in StackPanelMateriasImpartidas.Children)
+            // Función recursiva para encontrar todos los CheckBoxes marcados
+            void ExtraerIds(UIElementCollection children)
             {
-                if (elemento is not Border border) continue;
-                if (border.Child is not StackPanel sp) continue;
-
-                foreach (UIElement hijo in sp.Children)
+                foreach (UIElement element in children)
                 {
-                    if (hijo is not StackPanel panelMaterias) continue;
-                    foreach (var cb in panelMaterias.Children.OfType<CheckBox>())
-                    {
-                        if (cb.IsChecked == true && cb.Tag is int idMateria)
-                            _materiasSeleccionadasIds.Add(idMateria);
-                    }
+                    if (element is CheckBox cb && cb.IsChecked == true && cb.Tag is int idMateria)
+                        _materiasSeleccionadasIds.Add(idMateria);
+                    else if (element is Panel panel)
+                        ExtraerIds(panel.Children);
+                    else if (element is Border border && border.Child is Panel childPanel)
+                        ExtraerIds(childPanel.Children);
                 }
             }
+
+            ExtraerIds(StackPanelMateriasImpartidas.Children);
 
             if (_materiasSeleccionadasIds.Count == 0)
             {

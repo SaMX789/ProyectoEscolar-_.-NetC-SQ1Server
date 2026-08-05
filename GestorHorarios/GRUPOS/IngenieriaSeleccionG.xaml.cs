@@ -1,7 +1,10 @@
 ﻿using GestorHorarios.Models;
 using GestorHorarios.Services;
 using Microsoft.Data.SqlClient;
+using System;
+using System.Collections.Generic;
 using System.Data;
+using System.Linq;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Media;
@@ -12,6 +15,9 @@ namespace GestorHorarios.GRUPOS
     {
         private readonly int _idCarrera;
 
+        // NUEVO: Variable para saber si estamos editando o agregando un grupo
+        private int? _idGrupoEnEdicion = null;
+
         public IngenieriaSeleccionG()
         {
             InitializeComponent();
@@ -21,7 +27,36 @@ namespace GestorHorarios.GRUPOS
         {
             _idCarrera = idCarrera;
             CargarTituloCarrera();
+
+            // NUEVO: Cargamos los ComboBox del formulario antes de cargar los grupos
+            CargarOpcionesFormulario();
             CargarGrupos();
+        }
+
+        // NUEVO: Método para llenar los ComboBox de Semestre y Turno
+        private void CargarOpcionesFormulario()
+        {
+            // Llenar Semestres (1 al 9)
+            if (ComboBoxSemestre != null)
+            {
+                ComboBoxSemestre.Items.Clear();
+                for (int i = 1; i <= 9; i++)
+                {
+                    ComboBoxSemestre.Items.Add(new ComboBoxItem
+                    {
+                        Content = $"Semestre {i}",
+                        Tag = i
+                    });
+                }
+            }
+
+            // Llenar Turnos
+            if (ComboBoxTurno != null)
+            {
+                ComboBoxTurno.Items.Clear();
+                ComboBoxTurno.Items.Add(new ComboBoxItem { Content = "Matutino", Tag = "Matutino" });
+                ComboBoxTurno.Items.Add(new ComboBoxItem { Content = "Vespertino", Tag = "Vespertino" });
+            }
         }
 
         private void CargarTituloCarrera()
@@ -66,10 +101,10 @@ namespace GestorHorarios.GRUPOS
                     grupos.Add(new Grupo
                     {
                         IdGrupo = Convert.ToInt32(reader["id_grupo"]),
-                        Nombre = reader["NombreGrupo"].ToString() ?? "",
+                        Nombre = reader["NombreGrupo"]?.ToString() ?? reader["nombre"]?.ToString() ?? "",
                         Semestre = Convert.ToInt32(reader["semestre"]),
                         Turno = reader["turno"].ToString() ?? "",
-                        NombreCarrera = reader["NombreCarrera"].ToString() ?? ""
+                        NombreCarrera = reader["NombreCarrera"]?.ToString() ?? ""
                     });
                 }
 
@@ -158,6 +193,17 @@ namespace GestorHorarios.GRUPOS
                 Margin = new Thickness(10, 0, 0, 0)
             };
 
+            // MODIFICACIÓN: Añadir botón de Editar
+            var btnEditar = new Button
+            {
+                Content = "Editar",
+                Padding = new Thickness(12, 6, 12, 6),
+                Margin = new Thickness(0, 0, 5, 0),
+                Tag = grupo // Guardamos el objeto completo para poder editarlo
+            };
+            btnEditar.Click += EditarGrupo_Click;
+            botonesPanel.Children.Add(btnEditar);
+
             var btnEliminar = new Button
             {
                 Content = "Eliminar",
@@ -184,12 +230,138 @@ namespace GestorHorarios.GRUPOS
             Margin = new Thickness(0, 4, 0, 4)
         };
 
+        // NUEVO: Método para ocultar/mostrar formulario de grupos
+        private void BotonMostrarAgregarGrupo_Click(object sender, RoutedEventArgs e)
+        {
+            if (PanelFormularioGrupo.Visibility == Visibility.Collapsed)
+            {
+                PanelFormularioGrupo.Visibility = Visibility.Visible;
+                BotonMostrarAgregarGrupo.Content = "Cerrar";
+            }
+            else
+            {
+                LimpiarFormulario();
+                PanelFormularioGrupo.Visibility = Visibility.Collapsed;
+                BotonMostrarAgregarGrupo.Content = "Agregar Grupo";
+            }
+        }
+
+        // NUEVO: Limpiar el formulario
+        private void LimpiarFormulario()
+        {
+            TextboxNombre.Clear();
+            ComboBoxSemestre.SelectedIndex = -1;
+            ComboBoxTurno.SelectedIndex = -1;
+            _idGrupoEnEdicion = null;
+            BotonGuardarGrupo.Content = "Guardar";
+        }
+
+        // NUEVO: Lógica del botón Editar
+        private void EditarGrupo_Click(object sender, RoutedEventArgs e)
+        {
+            if (sender is Button btn && btn.Tag is Grupo grupo)
+            {
+                _idGrupoEnEdicion = grupo.IdGrupo;
+                TextboxNombre.Text = grupo.Nombre;
+
+                // Seleccionar Semestre
+                foreach (ComboBoxItem item in ComboBoxSemestre.Items)
+                {
+                    if ((int)item.Tag == grupo.Semestre)
+                    {
+                        ComboBoxSemestre.SelectedItem = item;
+                        break;
+                    }
+                }
+
+                // Seleccionar Turno
+                foreach (ComboBoxItem item in ComboBoxTurno.Items)
+                {
+                    if (item.Tag.ToString() == grupo.Turno)
+                    {
+                        ComboBoxTurno.SelectedItem = item;
+                        break;
+                    }
+                }
+
+                BotonGuardarGrupo.Content = "Actualizar";
+                BotonMostrarAgregarGrupo.Content = "Cancelar edición";
+                PanelFormularioGrupo.Visibility = Visibility.Visible;
+            }
+        }
+
+        // NUEVO: Guardar o Actualizar Grupo
+        private void BotonGuardarGrupo_Click(object sender, RoutedEventArgs e)
+        {
+            if (string.IsNullOrWhiteSpace(TextboxNombre.Text) ||
+                ComboBoxSemestre.SelectedItem == null ||
+                ComboBoxTurno.SelectedItem == null)
+            {
+                MessageBox.Show("Por favor, llena todos los campos.", "Validación", MessageBoxButton.OK, MessageBoxImage.Warning);
+                return;
+            }
+
+            int semestreSeleccionado = (int)((ComboBoxItem)ComboBoxSemestre.SelectedItem).Tag;
+            string turnoSeleccionado = ((ComboBoxItem)ComboBoxTurno.SelectedItem).Tag.ToString()!;
+
+            try
+            {
+                using var conn = new SqlConnection(DatabaseService.GetConnectionString());
+                using var cmd = new SqlCommand();
+                cmd.Connection = conn;
+
+                if (_idGrupoEnEdicion == null)
+                {
+                    // INSERT
+                    cmd.CommandText = @"INSERT INTO Grupos (nombre, semestre, turno, id_carrera) 
+                                        VALUES (@nombre, @semestre, @turno, @id_carrera)";
+                }
+                else
+                {
+                    // UPDATE
+                    cmd.CommandText = @"UPDATE Grupos 
+                                        SET nombre = @nombre, semestre = @semestre, turno = @turno 
+                                        WHERE id_grupo = @id_grupo";
+                    cmd.Parameters.AddWithValue("@id_grupo", _idGrupoEnEdicion.Value);
+                }
+
+                cmd.Parameters.AddWithValue("@nombre", TextboxNombre.Text.Trim().ToUpper());
+                cmd.Parameters.AddWithValue("@semestre", semestreSeleccionado);
+                cmd.Parameters.AddWithValue("@turno", turnoSeleccionado);
+                cmd.Parameters.AddWithValue("@id_carrera", _idCarrera);
+
+                conn.Open();
+                cmd.ExecuteNonQuery();
+
+                MessageBox.Show(_idGrupoEnEdicion == null ? "Grupo guardado exitosamente." : "Grupo actualizado exitosamente.",
+                                "Éxito", MessageBoxButton.OK, MessageBoxImage.Information);
+
+                LimpiarFormulario();
+                PanelFormularioGrupo.Visibility = Visibility.Collapsed;
+                BotonMostrarAgregarGrupo.Content = "Agregar Grupo";
+
+                CargarGrupos();
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show($"Error al guardar el grupo:\n\n{ex.Message}", "Error de BD", MessageBoxButton.OK, MessageBoxImage.Error);
+            }
+        }
+
+        // NUEVO: Lógica del botón Cancelar
+        private void BotonCancelarGrupo_Click(object sender, RoutedEventArgs e)
+        {
+            LimpiarFormulario();
+            PanelFormularioGrupo.Visibility = Visibility.Collapsed;
+            BotonMostrarAgregarGrupo.Content = "Agregar Grupo";
+        }
+
         private void EliminarGrupo_Click(object sender, RoutedEventArgs e)
         {
             if (sender is not Button btn || btn.Tag is not int idGrupo) return;
 
             var resultado = MessageBox.Show(
-                "¿Está seguro de eliminar este grupo?",
+                "¿Está seguro de eliminar este grupo de forma permanente?",
                 "Eliminar Grupo", MessageBoxButton.YesNo, MessageBoxImage.Warning);
 
             if (resultado != MessageBoxResult.Yes) return;
@@ -209,7 +381,7 @@ namespace GestorHorarios.GRUPOS
             }
             catch (Exception ex)
             {
-                MessageBox.Show($"Error al eliminar: {ex.Message}",
+                MessageBox.Show($"Error al eliminar (Revisa si el grupo ya tiene un horario asignado): {ex.Message}",
                     "Error", MessageBoxButton.OK, MessageBoxImage.Error);
             }
         }

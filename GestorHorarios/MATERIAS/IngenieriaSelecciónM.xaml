@@ -23,6 +23,7 @@
 
     <ScrollViewer VerticalScrollBarVisibility="Auto">
         <StackPanel Margin="40,30" MaxWidth="1200" HorizontalAlignment="Center">
+
             <Grid Margin="0,0,0,20">
                 <Grid.ColumnDefinitions>
                     <ColumnDefinition Width="Auto"/>
@@ -42,14 +43,11 @@
                            Grid.Column="1"
                            Text="Materias de la carrera de:"
                            FontSize="24"
-                           
                            FontWeight="Bold"
                            Foreground="{StaticResource GuindaBajo}"
                            HorizontalAlignment="Center"
                            Margin="5,0,5,0"
                            VerticalAlignment="Top"/>
-                
-                
 
                 <Button Grid.Column="2"
                         x:Name="BotonMostrarAgregarMaterias"
@@ -59,6 +57,7 @@
                         Width="170"
                         Click="BotonMostrarAgregarMaterias_Click"/>
             </Grid>
+
             <StackPanel x:Name="PanelFormularioMateria" Visibility="Collapsed">
                 <StackPanel Margin="10,10,10,10">
                     <Border Style="{StaticResource MateriaCardStyle}" Height="Auto">
@@ -71,61 +70,93 @@
                                 <RowDefinition Height="Auto"/>
                                 <RowDefinition Height="Auto"/>
                                 <RowDefinition Height="Auto"/>
+                                <!-- Se agregaron 2 filas extra para el Semestre -->
+                                <RowDefinition Height="Auto"/>
+                                <RowDefinition Height="Auto"/>
                                 <RowDefinition Height="Auto"/>
                             </Grid.RowDefinitions>
-                    <TextBlock Text="AGREGAR MATERIAS" 
-                               Grid.Row="0"
-                               FontSize="18"
-                               HorizontalAlignment="Center"
-                               Foreground="{StaticResource negroTitulos}"
-                               FontWeight="Bold"
-                               />
-                    <TextBlock Text="Nombre de la materia"
-                               Grid.Row="1"
-                               FontSize="15"
-                               Foreground="{StaticResource negroTitulos}"
-                               FontWeight="DemiBold"
-                               Margin="0,10,0,10"
-                               />
+
+                            <TextBlock Text="AGREGAR MATERIAS" 
+                                       Grid.Row="0"
+                                       FontSize="18"
+                                       HorizontalAlignment="Center"
+                                       Foreground="{StaticResource negroTitulos}"
+                                       FontWeight="Bold"/>
+
+                            <TextBlock Text="Nombre de la materia"
+                                       Grid.Row="1"
+                                       FontSize="15"
+                                       Foreground="{StaticResource negroTitulos}"
+                                       FontWeight="DemiBold"
+                                       Margin="0,10,0,10"/>
+
+                            <!-- Cambiado a TextboxNombre para coincidir con el backend -->
                             <TextBox Grid.Row="2"
-                                     Name="TextboxNombreMateria"/>
+                                     Name="TextboxNombre"/>
+
                             <TextBlock Text="Clave"
-                                Grid.Row="3"
-                                FontSize="15"
-                                Foreground="{StaticResource negroTitulos}"
-                                FontWeight="DemiBold"
-                               Margin="0,10,0,10"
-                                />
+                                       Grid.Row="3"
+                                       FontSize="15"
+                                       Foreground="{StaticResource negroTitulos}"
+                                       FontWeight="DemiBold"
+                                       Margin="0,10,0,10"/>
+
                             <TextBox Grid.Row="4"
                                      Name="TextboxClave"/>
+
                             <TextBlock Text="Total de créditos"
-                                Grid.Row="5"
-                                FontSize="15"
-                                Foreground="{StaticResource negroTitulos}"
-                                FontWeight="DemiBold"
-                               Margin="0,10,0,10"
-                                />
+                                       Grid.Row="5"
+                                       FontSize="15"
+                                       Foreground="{StaticResource negroTitulos}"
+                                       FontWeight="DemiBold"
+                                       Margin="0,10,0,10"/>
+
+                            <!-- Cambiado a TextboxCreditos para coincidir con el backend -->
                             <TextBox Grid.Row="6"
-                                     Name="TextboxTotalCreditos"/>
-                            <Button Grid.Row="7" 
-                                    Name="BotonGuardarMaterias"
-                                    Height="18" 
-                                    Width="100" 
-                                    HorizontalAlignment="Left"
-                                    Content="Guardar"
-                                    Foreground="{StaticResource ColorWhitesmoke}"
-                                    Margin="0,10,0,10"
-                                    Click="BotonGuardarMaterias_Click"/>
+                                     Name="TextboxCreditos"/>
+
+                            <!-- NUEVO: Apartado de Semestre -->
+                            <TextBlock Text="Semestre"
+                                       Grid.Row="7"
+                                       FontSize="15"
+                                       Foreground="{StaticResource negroTitulos}"
+                                       FontWeight="DemiBold"
+                                       Margin="0,10,0,10"/>
+
+                            <ComboBox Grid.Row="8"
+                                      Name="ComboBoxSemestre"
+                                      Height="25"
+                                      Margin="0,0,0,15"
+                                      Padding="5"/>
+
+                            <!-- NUEVO: Botones Guardar y Cancelar agrupados en el Row 9 -->
+                            <StackPanel Grid.Row="9" Orientation="Horizontal" Margin="0,10,0,10" HorizontalAlignment="Left">
+
+                                <Button Name="BotonGuardarMaterias"
+                                        Height="25" 
+                                        Width="100" 
+                                        Content="Guardar"
+                                        Foreground="{StaticResource ColorWhitesmoke}"
+                                        Click="BotonGuardarMaterias_Click"/>
+
+                                <Button Name="BotonCancelarMaterias"
+                                        Height="25" 
+                                        Width="100" 
+                                        Content="Cancelar"
+                                        Margin="15,0,0,0"
+                                        Foreground="White"
+                                        Background="#9E9E9E" 
+                                        Click="BotonCancelarMaterias_Click"/>
+
+                            </StackPanel>
                         </Grid>
                     </Border>
                 </StackPanel>
-                
             </StackPanel>
 
             <!-- PLANTILLA MATERIAS AGRUPADAS POR SEMESTRE -->
             <StackPanel x:Name="ListaMaterias">
             </StackPanel>
-
 
         </StackPanel>
     </ScrollViewer>
