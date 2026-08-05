@@ -15,7 +15,7 @@ namespace GestorHorarios.MATERIAS
     {
         private int _idCarrera;
 
-        // NUEVO: Variable para saber si estamos editando o agregando
+        // Variable de tu compañero para saber si estamos editando o agregando
         private int? _idMateriaEnEdicion = null;
 
         public IngenieriaSeleccionM(int idCarrera)
@@ -69,6 +69,7 @@ namespace GestorHorarios.MATERIAS
             }
 
             int semestreMaximo = materias.Any() ? materias.Max(m => m.Semestre) : 0;
+            ListaMaterias.Children.Clear();
 
             for (int semestre = 1; semestre <= semestreMaximo; semestre++)
             {
@@ -76,10 +77,10 @@ namespace GestorHorarios.MATERIAS
                 var titloSemestre = new TextBlock
                 {
                     Text = textoSemestre,
-                    FontSize = 18,
-                    FontWeight = FontWeights.Bold,
+                    FontSize = 16,
+                    FontWeight = FontWeights.ExtraBold, // Ajuste moderno
                     Foreground = (Brush)FindResource("GuindaBajo"),
-                    Margin = new Thickness(0, 20, 0, 10)
+                    Margin = new Thickness(5, 25, 0, 10)
                 };
 
                 ListaMaterias.Children.Add(titloSemestre);
@@ -147,73 +148,81 @@ namespace GestorHorarios.MATERIAS
             return nombreCarrera;
         }
 
+        // ==========================================
+        // DISEÑO MODERNO DE LA TARJETA + BOTONES FUNCIONALES
+        // ==========================================
         private Border CrearCardMateria(Materia materia)
         {
-            var border = new Border
-            {
-                Style = (Style)FindResource("MateriaCardStyle")
-            };
+            var border = new Border { Style = (Style)FindResource("MateriaCardStyle") };
 
             var grid = new Grid();
-            grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
-            grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(80) });
-            grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(80) });
-            grid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+            grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) }); // Nombre
+            grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(100) }); // Clave
+            grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(100) }); // Creditos
+            grid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto }); // Botones
 
+            // 1. Título
             var nombreText = new TextBlock
             {
                 Text = materia.Nombre,
                 FontSize = 16,
-                FontWeight = FontWeights.SemiBold,
-                Foreground = (Brush)FindResource("GuindaBajo")
+                FontWeight = FontWeights.Bold,
+                Foreground = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#333333")),
+                VerticalAlignment = VerticalAlignment.Center
             };
             Grid.SetColumn(nombreText, 0);
             grid.Children.Add(nombreText);
 
-            var claveText = new TextBlock
+            // 2. Badge de la Clave
+            var claveBadge = new Border
             {
-                Text = materia.Clave,
-                VerticalAlignment = VerticalAlignment.Center,
-                Foreground = (Brush)FindResource("GuindaBajo")
+                Background = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#F1F3F5")),
+                CornerRadius = new CornerRadius(4),
+                Padding = new Thickness(8, 4, 8, 4),
+                HorizontalAlignment = HorizontalAlignment.Left,
+                VerticalAlignment = VerticalAlignment.Center
             };
-            Grid.SetColumn(claveText, 1);
-            grid.Children.Add(claveText);
+            claveBadge.Child = new TextBlock { Text = materia.Clave, FontSize = 12, FontWeight = FontWeights.SemiBold, Foreground = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#495057")) };
+            Grid.SetColumn(claveBadge, 1);
+            grid.Children.Add(claveBadge);
 
-            var creditosText = new TextBlock
+            // 3. Badge de los Créditos
+            var creditosBadge = new Border
             {
-                Text = materia.Creditos.ToString(),
-                VerticalAlignment = VerticalAlignment.Center,
-                HorizontalAlignment = HorizontalAlignment.Center,
-                Foreground = (Brush)FindResource("GuindaBajo")
+                Background = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#E8F5E9")),
+                CornerRadius = new CornerRadius(4),
+                Padding = new Thickness(8, 4, 8, 4),
+                HorizontalAlignment = HorizontalAlignment.Left,
+                VerticalAlignment = VerticalAlignment.Center
             };
-            Grid.SetColumn(creditosText, 2);
-            grid.Children.Add(creditosText);
+            creditosBadge.Child = new TextBlock { Text = $"{materia.Creditos} Créditos", FontSize = 12, FontWeight = FontWeights.Bold, Foreground = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#2E7D32")) };
+            Grid.SetColumn(creditosBadge, 2);
+            grid.Children.Add(creditosBadge);
 
-            var buttonStack = new StackPanel
-            {
-                Orientation = Orientation.Horizontal
-            };
+            // 4. Panel de Botones Modernos
+            var buttonStack = new StackPanel { Orientation = Orientation.Horizontal };
 
-            // MODIFICACIÓN: Asignar Tag y Evento Click al botón Editar
-            var editarBtn = new Button
-            {
-                Content = "Editar",
-                Margin = new Thickness(5, 0, 5, 0),
-                Tag = materia // Guardamos el objeto materia completo aquí
-            };
-            editarBtn.Click += EditarMateria_Click;
+            // Ícono de Ojo para Docentes
+            string pathOjo = "M12,4.5 C7,4.5 2.73,7.61 1,12 C2.73,16.39 7,19.5 12,19.5 C17,19.5 21.27,16.39 23,12 C21.27,7.61 17,4.5 12,4.5 Z M12,17 C9.24,17 7,14.76 7,12 C7,9.24 9.24,7 12,7 C14.76,7 17,9.24 17,12 C17,14.76 14.76,17 12,17 Z M12,9 C10.34,9 9,10.34 9,12 C9,13.66 10.34,15 12,15 C13.66,15 15,13.66 15,12 C15,10.34 13.66,9 12,9 Z";
+            var btnDocentes = CrearBotonAccion("Docentes", pathOjo, "#0D9488"); // Turquesa
+            btnDocentes.Click += (s, e) => AbrirModalDocentesMateria(materia.IdMateria, materia.Nombre);
 
-            // MODIFICACIÓN: Asignar Tag y Evento Click al botón Eliminar
-            var eliminarBtn = new Button
-            {
-                Content = "Eliminar",
-                Margin = new Thickness(5, 0, 0, 0),
-                Tag = materia.IdMateria // Guardamos solo el ID para eliminar
-            };
-            eliminarBtn.Click += EliminarMateria_Click;
+            // Ícono de Lápiz para Editar (CONECTADO A LA LÓGICA DE TU COMPAÑERO)
+            string pathLapiz = "M3 17.25V21h3.75L17.81 9.94l-3.75-3.75L3 17.25zM20.71 7.04c.39-.39.39-1.02 0-1.41l-2.34-2.34c-.39-.39-1.02-.39-1.41 0l-1.83 1.83 3.75 3.75 1.83-1.83z";
+            var btnEditar = CrearBotonAccion("Editar", pathLapiz, "#475569"); // Gris Pizarra
+            btnEditar.Tag = materia;
+            btnEditar.Click += EditarMateria_Click;
 
-            buttonStack.Children.Add(editarBtn);
-            buttonStack.Children.Add(eliminarBtn);
+            // Ícono de Bote de Basura para Eliminar (CONECTADO A LA LÓGICA DE TU COMPAÑERO)
+            string pathBasura = "M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z";
+            var btnEliminar = CrearBotonAccion("Eliminar", pathBasura, "#E11D48"); // Rojo moderno
+            btnEliminar.Tag = materia.IdMateria;
+            btnEliminar.Click += EliminarMateria_Click;
+
+            buttonStack.Children.Add(btnDocentes);
+            buttonStack.Children.Add(btnEditar);
+            buttonStack.Children.Add(btnEliminar);
+
             Grid.SetColumn(buttonStack, 3);
             grid.Children.Add(buttonStack);
 
@@ -221,6 +230,121 @@ namespace GestorHorarios.MATERIAS
             return border;
         }
 
+        // ==========================================
+        // GENERADOR AUTOMÁTICO DE BOTONES CON ÍCONOS
+        // ==========================================
+        private Button CrearBotonAccion(string texto, string pathData, string bgColor)
+        {
+            var btn = new Button
+            {
+                ToolTip = texto,
+                Background = new SolidColorBrush((Color)ColorConverter.ConvertFromString(bgColor)),
+                Style = (Style)FindResource("ModernButtonStyle"),
+                Margin = new Thickness(6, 0, 0, 0)
+            };
+
+            var path = new System.Windows.Shapes.Path
+            {
+                Data = Geometry.Parse(pathData),
+                Fill = Brushes.White,
+                Stretch = Stretch.Uniform,
+                Width = 13,
+                Height = 13
+            };
+
+            var sp = new StackPanel { Orientation = Orientation.Horizontal };
+            sp.Children.Add(path);
+            sp.Children.Add(new TextBlock { Text = texto, Margin = new Thickness(6, 0, 0, 0), VerticalAlignment = VerticalAlignment.Center, FontSize = 12, FontWeight = FontWeights.SemiBold });
+
+            btn.Content = sp;
+            return btn;
+        }
+
+        // ==========================================
+        // LÓGICA DEL NUEVO MODAL DE DOCENTES
+        // ==========================================
+        private void AbrirModalDocentesMateria(int idMateria, string nombreMateria)
+        {
+            TxtModalNombreMateria.Text = nombreMateria;
+            PanelListaDocentesMateria.Children.Clear();
+
+            try
+            {
+                using var conn = new SqlConnection(DatabaseService.GetConnectionString());
+                using var cmd = new SqlCommand("sp_GetDocentesPorMateria", conn) { CommandType = CommandType.StoredProcedure };
+                cmd.Parameters.AddWithValue("@id_materia", idMateria);
+
+                conn.Open();
+                using var reader = cmd.ExecuteReader();
+
+                bool hayDocentes = false;
+
+                while (reader.Read())
+                {
+                    hayDocentes = true;
+                    string nombreDoc = reader["NombreDocente"].ToString()!;
+                    string carreraDoc = reader["CarreraPrincipal"].ToString()!;
+
+                    // NUEVO: Leemos la lista de carreras separadas por comas
+                    string carrerasAsignadas = reader["CarrerasAsignadas"].ToString()!;
+
+                    var border = new Border
+                    {
+                        Background = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#F8F9FA")),
+                        BorderBrush = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#DEE2E6")),
+                        BorderThickness = new Thickness(1),
+                        CornerRadius = new CornerRadius(6),
+                        Padding = new Thickness(15),
+                        Margin = new Thickness(0, 0, 0, 10)
+                    };
+
+                    var sp = new StackPanel();
+                    sp.Children.Add(new TextBlock { Text = nombreDoc, FontWeight = FontWeights.Bold, FontSize = 14, Foreground = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#333333")) });
+                    sp.Children.Add(new TextBlock { Text = $"Departamento Base: {carreraDoc}", FontSize = 12, Foreground = Brushes.DimGray, Margin = new Thickness(0, 4, 0, 0) });
+
+                    // NUEVO: Agregamos el texto con las carreras en las que imparte clases
+                    sp.Children.Add(new TextBlock
+                    {
+                        Text = $"Da clases en: {carrerasAsignadas}",
+                        FontSize = 11,
+                        FontStyle = FontStyles.Italic,
+                        Foreground = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#0D9488")), // Turquesa
+                        Margin = new Thickness(0, 4, 0, 0),
+                        TextWrapping = TextWrapping.Wrap
+                    });
+
+                    border.Child = sp;
+                    PanelListaDocentesMateria.Children.Add(border);
+                }
+
+                if (!hayDocentes)
+                {
+                    PanelListaDocentesMateria.Children.Add(new TextBlock
+                    {
+                        Text = "No hay ningún docente registrado en el sistema habilitado para dar esta materia.",
+                        FontStyle = FontStyles.Italic,
+                        Foreground = Brushes.Gray,
+                        TextWrapping = TextWrapping.Wrap,
+                        Margin = new Thickness(0, 10, 0, 0)
+                    });
+                }
+
+                ModalDocentesMateria.Visibility = Visibility.Visible;
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show($"Error al cargar docentes: {ex.Message}", "Error", MessageBoxButton.OK, MessageBoxImage.Error);
+            }
+        }
+
+        private void CerrarModalDocentes_Click(object sender, RoutedEventArgs e)
+        {
+            ModalDocentesMateria.Visibility = Visibility.Collapsed;
+        }
+
+        // ==========================================
+        // LÓGICA RESTAURADA DE TU COMPAÑERO
+        // ==========================================
         private void VolverCarreras_Click(object sender, RoutedEventArgs e)
         {
             NavigationService.GetFromWindow(this)?.NavigateTo(new MateriasView());
@@ -231,17 +355,18 @@ namespace GestorHorarios.MATERIAS
             if (PanelFormularioMateria.Visibility == Visibility.Collapsed)
             {
                 PanelFormularioMateria.Visibility = Visibility.Visible;
-                BotonMostrarAgregarMaterias.Content = "Cerrar";
+                BotonMostrarAgregarMaterias.Content = "X Cerrar formulario";
+                BotonMostrarAgregarMaterias.Background = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#475569"));
             }
             else
             {
-                LimpiarFormulario(); // Limpiamos al cerrar para que no queden datos pegados
+                LimpiarFormulario(); // Tu compañero agregó esto
                 PanelFormularioMateria.Visibility = Visibility.Collapsed;
-                BotonMostrarAgregarMaterias.Content = "Agregar materias";
+                BotonMostrarAgregarMaterias.Content = "+ Agregar materias";
+                BotonMostrarAgregarMaterias.Background = (Brush)FindResource("GuindaBajo");
             }
         }
 
-        // NUEVO: Método para limpiar el formulario y resetear el modo edición
         private void LimpiarFormulario()
         {
             TextboxNombre.Clear();
@@ -252,7 +377,6 @@ namespace GestorHorarios.MATERIAS
             BotonGuardarMaterias.Content = "Guardar"; // Restauramos el texto
         }
 
-        // NUEVO: Lógica del botón Editar
         private void EditarMateria_Click(object sender, RoutedEventArgs e)
         {
             if (sender is Button btn && btn.Tag is Materia materia)
@@ -278,12 +402,11 @@ namespace GestorHorarios.MATERIAS
                 // 4. Cambiar el aspecto de la interfaz
                 BotonGuardarMaterias.Content = "Actualizar";
                 BotonMostrarAgregarMaterias.Content = "Cancelar edición";
+                BotonMostrarAgregarMaterias.Background = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#475569"));
                 PanelFormularioMateria.Visibility = Visibility.Visible;
             }
         }
 
-        // NUEVO: Lógica del botón Eliminar
-        // NUEVO: Lógica del botón Eliminar (Borrado Lógico)
         private void EliminarMateria_Click(object sender, RoutedEventArgs e)
         {
             if (sender is Button btn && btn.Tag is int idMateria)
@@ -300,7 +423,6 @@ namespace GestorHorarios.MATERIAS
                     {
                         using (SqlConnection conn = new SqlConnection(DatabaseService.GetConnectionString()))
                         {
-                            // MODIFICACIÓN: Hacemos un UPDATE en lugar de un DELETE
                             string query = "UPDATE Materias SET id_estado = 2 WHERE id_materia = @id";
                             SqlCommand cmd = new SqlCommand(query, conn);
                             cmd.Parameters.AddWithValue("@id", idMateria);
@@ -311,22 +433,17 @@ namespace GestorHorarios.MATERIAS
 
                         MessageBox.Show("Materia dada de baja correctamente.", "Éxito", MessageBoxButton.OK, MessageBoxImage.Information);
 
-                        // Refrescar la lista
                         ListaMaterias.Children.Clear();
                         CargarMaterias();
                     }
                     catch (Exception ex)
                     {
-                        MessageBox.Show($"Error al eliminar la materia: {ex.Message}",
-                                        "Error de BD",
-                                        MessageBoxButton.OK,
-                                        MessageBoxImage.Error);
+                        MessageBox.Show($"Error al eliminar la materia: {ex.Message}", "Error de BD", MessageBoxButton.OK, MessageBoxImage.Error);
                     }
                 }
             }
         }
 
-        // MODIFICADO: Adaptado para Guardar o Actualizar según el modo
         private void BotonGuardarMaterias_Click(object sender, RoutedEventArgs e)
         {
             if (string.IsNullOrWhiteSpace(TextboxNombre.Text) ||
@@ -354,13 +471,11 @@ namespace GestorHorarios.MATERIAS
                     SqlCommand cmd = new SqlCommand();
                     cmd.Connection = conn;
 
-                    // Si NO estamos editando, hacemos un INSERT
                     if (_idMateriaEnEdicion == null)
                     {
                         cmd.CommandText = @"INSERT INTO Materias (nombre, clave, creditos, semestre, id_carrera, id_estado) 
                                             VALUES (@nombre, @clave, @creditos, @semestre, @id_carrera, 1)";
                     }
-                    // Si SÍ estamos editando, hacemos un UPDATE
                     else
                     {
                         cmd.CommandText = @"UPDATE Materias 
@@ -384,7 +499,8 @@ namespace GestorHorarios.MATERIAS
 
                 LimpiarFormulario();
                 PanelFormularioMateria.Visibility = Visibility.Collapsed;
-                BotonMostrarAgregarMaterias.Content = "Agregar materias";
+                BotonMostrarAgregarMaterias.Content = "+ Agregar materias";
+                BotonMostrarAgregarMaterias.Background = (Brush)FindResource("GuindaBajo");
 
                 ListaMaterias.Children.Clear();
                 CargarMaterias();
@@ -394,18 +510,13 @@ namespace GestorHorarios.MATERIAS
                 MessageBox.Show($"Ocurrió un error al guardar en la base de datos:\n\n{ex.Message}", "Error de BD", MessageBoxButton.OK, MessageBoxImage.Error);
             }
         }
-        // NUEVO: Lógica del botón Cancelar
+
         private void BotonCancelarMaterias_Click(object sender, RoutedEventArgs e)
         {
-            // 1. Limpiamos los campos y salimos del modo edición
             LimpiarFormulario();
-
-            // 2. Ocultamos la ventana del formulario
             PanelFormularioMateria.Visibility = Visibility.Collapsed;
-
-            // 3. Restauramos el texto del botón principal de la esquina superior derecha
-            BotonMostrarAgregarMaterias.Content = "Agregar materias";
+            BotonMostrarAgregarMaterias.Content = "+ Agregar materias";
+            BotonMostrarAgregarMaterias.Background = (Brush)FindResource("GuindaBajo");
         }
-
     }
 }

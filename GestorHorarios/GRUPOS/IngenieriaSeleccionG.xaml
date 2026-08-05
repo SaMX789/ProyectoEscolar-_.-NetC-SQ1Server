@@ -8,16 +8,39 @@
       Background="{StaticResource ColorWhitesmoke}">
 
     <UserControl.Resources>
+        <!-- ESTILO DE TARJETA MODERNO (Igual al de Materias) -->
         <Style x:Key="GrupoCardStyle" TargetType="Border">
             <Setter Property="Background" Value="White"/>
-            <Setter Property="CornerRadius" Value="8"/>
-            <Setter Property="Margin" Value="0,6"/>
-            <Setter Property="Padding" Value="16,12"/>
+            <Setter Property="CornerRadius" Value="10"/>
+            <Setter Property="Margin" Value="0,8"/>
+            <Setter Property="Padding" Value="15,12"/>
             <Setter Property="Effect">
                 <Setter.Value>
-                    <DropShadowEffect Color="#DDDDDD" Direction="270" ShadowDepth="2" BlurRadius="8" Opacity="0.25"/>
+                    <DropShadowEffect Color="#CCCCCC" Direction="270" ShadowDepth="2" BlurRadius="10" Opacity="0.2"/>
                 </Setter.Value>
             </Setter>
+        </Style>
+
+        <!-- ESTILO MODERNO PARA BOTONES REDONDEADOS -->
+        <Style x:Key="ModernButtonStyle" TargetType="Button">
+            <Setter Property="Foreground" Value="White"/>
+            <Setter Property="Padding" Value="12,8"/>
+            <Setter Property="BorderThickness" Value="0"/>
+            <Setter Property="Cursor" Value="Hand"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border Background="{TemplateBinding Background}" CornerRadius="6" Padding="{TemplateBinding Padding}">
+                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                        </Border>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+            <Style.Triggers>
+                <Trigger Property="IsMouseOver" Value="True">
+                    <Setter Property="Opacity" Value="0.85"/>
+                </Trigger>
+            </Style.Triggers>
         </Style>
 
         <Style x:Key="CicloHeaderStyle" TargetType="Border">
@@ -39,10 +62,11 @@
                 </Grid.ColumnDefinitions>
 
                 <Button Grid.Column="0"
-                        Content="Volver"
-                        Padding="15,8" Width="110" FontSize="14"
+                        Content="&lt;- Volver"
+                        Width="110" FontSize="14" FontWeight="SemiBold"
                         Click="VolverCarreras_Click"
-                        Background="{StaticResource RosaOscuro}"/>
+                        Background="{StaticResource RosaOscuro}"
+                        Style="{StaticResource ModernButtonStyle}"/>
 
                 <TextBlock x:Name="TituloCarrera"
                            Grid.Column="1"
@@ -51,15 +75,17 @@
                            Foreground="{StaticResource GuindaBajo}"
                            HorizontalAlignment="Center" VerticalAlignment="Center"/>
 
-                <!-- NUEVO: Botón para abrir el formulario -->
+                <!-- Boton para abrir el formulario -->
                 <Button Grid.Column="2"
                         x:Name="BotonMostrarAgregarGrupo"
-                        Content="Agregar Grupo"
-                        Padding="15,8" FontSize="14" Width="170"
-                        Click="BotonMostrarAgregarGrupo_Click"/>
+                        Content="+ Agregar Grupo"
+                        FontSize="14" FontWeight="SemiBold" Width="170"
+                        Background="{StaticResource GuindaBajo}"
+                        Click="BotonMostrarAgregarGrupo_Click"
+                        Style="{StaticResource ModernButtonStyle}"/>
             </Grid>
 
-            <!-- NUEVO: Formulario oculto para Agregar/Editar Grupos -->
+            <!-- Formulario oculto para Agregar/Editar Grupos -->
             <StackPanel x:Name="PanelFormularioGrupo" Visibility="Collapsed" Margin="0,0,0,20">
                 <Border Style="{StaticResource GrupoCardStyle}" Padding="20">
                     <Grid>
@@ -81,60 +107,54 @@
                         <TextBlock Text="Nombre del grupo (Ej. 1AMS)"
                                    Grid.Row="1" FontSize="15" Foreground="#333333" FontWeight="DemiBold" Margin="0,0,0,5"/>
                         <TextBox x:Name="TextboxNombre" 
-                                 Grid.Row="2" Height="25" Margin="0,0,0,15" Padding="2"/>
+                                 Grid.Row="2" Height="30" Margin="0,0,0,15" Padding="5"/>
 
                         <TextBlock Text="Semestre"
                                    Grid.Row="3" FontSize="15" Foreground="#333333" FontWeight="DemiBold" Margin="0,0,0,5"/>
                         <ComboBox x:Name="ComboBoxSemestre" 
-                                  Grid.Row="4" Height="25" Margin="0,0,0,15" Padding="5"/>
+                                  Grid.Row="4" Height="30" Margin="0,0,0,15" Padding="5"/>
 
                         <TextBlock Text="Turno"
                                    Grid.Row="5" FontSize="15" Foreground="#333333" FontWeight="DemiBold" Margin="0,0,0,5"/>
                         <ComboBox x:Name="ComboBoxTurno" 
-                                  Grid.Row="6" Height="25" Margin="0,0,0,20" Padding="5"/>
+                                  Grid.Row="6" Height="30" Margin="0,0,0,20" Padding="5"/>
 
-                        <!-- Botones de Acción del Formulario -->
+                        <!-- Botones de Accion del Formulario Modernos -->
                         <StackPanel Grid.Row="7" Orientation="Horizontal" HorizontalAlignment="Left">
                             <Button x:Name="BotonGuardarGrupo"
-                                    Height="25" Width="100" 
+                                    Width="100" 
                                     Content="Guardar"
-                                    Foreground="{StaticResource ColorWhitesmoke}"
-                                    Click="BotonGuardarGrupo_Click"/>
+                                    Background="#28A745"
+                                    Click="BotonGuardarGrupo_Click"
+                                    Style="{StaticResource ModernButtonStyle}"/>
 
                             <Button x:Name="BotonCancelarGrupo"
-                                    Height="25" Width="100" 
+                                    Width="100" 
                                     Content="Cancelar"
                                     Margin="15,0,0,0"
-                                    Foreground="White" Background="#9E9E9E" 
-                                    Click="BotonCancelarGrupo_Click"/>
+                                    Background="#9E9E9E" 
+                                    Click="BotonCancelarGrupo_Click"
+                                    Style="{StaticResource ModernButtonStyle}"/>
                         </StackPanel>
                     </Grid>
                 </Border>
             </StackPanel>
 
-            <!-- CICLO B: semestres impares (agosto-diciembre) -->
-            <Border Style="{StaticResource CicloHeaderStyle}"
-                    Background="#E8F5E9">
+            <!-- CICLO B -->
+            <Border Style="{StaticResource CicloHeaderStyle}" Background="#E8F5E9">
                 <StackPanel>
-                    <TextBlock Text="🗓 CICLO B — Agosto a Diciembre"
-                               FontSize="16" FontWeight="Bold"
-                               Foreground="#2E7D32"/>
-                    <TextBlock Text="Semestres: 1, 3, 5, 7, 9"
-                               FontSize="12" Foreground="#555" Margin="0,2,0,0"/>
+                    <TextBlock Text="🗓 CICLO B — Agosto a Diciembre" FontSize="16" FontWeight="Bold" Foreground="#2E7D32"/>
+                    <TextBlock Text="Semestres: 1, 3, 5, 7, 9" FontSize="12" Foreground="#555" Margin="0,2,0,0"/>
                 </StackPanel>
             </Border>
 
             <StackPanel x:Name="PanelCicloB" Margin="0,0,0,24"/>
 
-            <!-- CICLO A: semestres pares (enero-junio) -->
-            <Border Style="{StaticResource CicloHeaderStyle}"
-                    Background="#E3F2FD">
+            <!-- CICLO A -->
+            <Border Style="{StaticResource CicloHeaderStyle}" Background="#E3F2FD">
                 <StackPanel>
-                    <TextBlock Text="🗓 CICLO A — Enero a Junio"
-                               FontSize="16" FontWeight="Bold"
-                               Foreground="#1565C0"/>
-                    <TextBlock Text="Semestres: 2, 4, 6, 8"
-                               FontSize="12" Foreground="#555" Margin="0,2,0,0"/>
+                    <TextBlock Text="🗓 CICLO A — Enero a Junio" FontSize="16" FontWeight="Bold" Foreground="#1565C0"/>
+                    <TextBlock Text="Semestres: 2, 4, 6, 8" FontSize="12" Foreground="#555" Margin="0,2,0,0"/>
                 </StackPanel>
             </Border>
 
