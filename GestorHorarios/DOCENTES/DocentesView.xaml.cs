@@ -1,5 +1,6 @@
 using GestorHorarios.Services;
 using Microsoft.Data.SqlClient;
+using System;
 using System.Data;
 using System.Windows.Controls;
 using System.Windows.Input;
@@ -38,13 +39,21 @@ namespace GestorHorarios.DOCENTES
                 while (reader.Read() && i < bloques.Length)
                 {
                     int total = Convert.ToInt32(reader["TotalDocentes"]);
-                    bloques[i].Text = $"{total} {(total == 1 ? "Docente" : "Docentes")}";
+
+                    // MODIFICACIÓN AQUÍ: Se eliminó la concatenación de la palabra "Docente/s"
+                    bloques[i].Text = total.ToString();
+
                     i++;
                 }
             }
             catch (Exception ex)
             {
-                // Si falla la BD los conteos quedan en "..."
+                // Mostrar el error en pantalla para saber exactamente qué está fallando en SQL
+                System.Windows.MessageBox.Show($"Ocurrió un error al cargar los datos:\n\n{ex.Message}",
+                                               "Error de Base de Datos",
+                                               System.Windows.MessageBoxButton.OK,
+                                               System.Windows.MessageBoxImage.Error);
+
                 System.Diagnostics.Debug.WriteLine($"Error cargando conteos: {ex.Message}");
             }
         }
