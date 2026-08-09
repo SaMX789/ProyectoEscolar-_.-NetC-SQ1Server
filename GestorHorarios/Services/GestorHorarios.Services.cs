@@ -90,7 +90,7 @@ namespace GestorHorarios.Services
 
                             Docente docenteElegido = null;
                             if (pool.Count > 0)
-                                docenteElegido = pool.OrderBy(d => horasAsignadasPorMaestro[d.IdDocente]).First();
+                                docenteElegido = pool.OrderBy(d => d.HorasMaximas).ThenBy(d => horasAsignadasPorMaestro[d.IdDocente]).First();
                             else
                                 docenteElegido = docentes.First(d => d.IdDocente == -1);
 

@@ -34,7 +34,7 @@ namespace GestorHorarios.DOCENTES
         private static readonly string[] HORAS_DISPONIBLES =
         {
             "7:30", "8:30", "9:30", "10:30", "11:30", "12:30",
-            "13:30", "14:30", "15:30", "16:30", "17:30", "18:30", "19:30"
+            "13:30", "14:30", "15:30", "16:30", "17:30", "18:30"
         };
         #endregion
 
@@ -42,7 +42,7 @@ namespace GestorHorarios.DOCENTES
         private int _idCarrera;
         private readonly List<Carrera> _carrerasDisponibles = new();
         private readonly List<int> _materiasSeleccionadasIds = new();
-        private readonly Dictionary<string, (int horaInicio, int horaFin)> _horarioSeleccionado = new();
+        private readonly Dictionary<string, HashSet<int>> _horarioSeleccionado = new();
         private readonly Dictionary<string, UIElement> _secondaryPanels = new();
 
         // Mapeo id_materia -> nombre para el resumen
@@ -274,28 +274,24 @@ namespace GestorHorarios.DOCENTES
         private List<(int idDia, int idBloque)> ObtenerDisponibilidadSeleccionada()
         {
             var resultado = new List<(int, int)>();
-
-            // DiasSemana: Lunes=1..Viernes=5 (según orden en BD)
             var diasMap = new Dictionary<string, int>
             {
                 { "Lunes", 1 }, { "Martes", 2 }, { "Miércoles", 3 },
                 { "Jueves", 4 }, { "Viernes", 5 }
             };
-
-            // Cargar bloques desde BD para mapear índice → id_bloque
             var bloques = CargarBloques();
 
-            foreach (var (dia, rango) in _horarioSeleccionado)
+            foreach (var dia in _horarioSeleccionado.Keys)
             {
                 if (!diasMap.TryGetValue(dia, out int idDia)) continue;
 
-                for (int i = rango.horaInicio; i <= rango.horaFin; i++)
+                // Ahora recorremos la lista de cuadros individuales (HashSet)
+                foreach (var horaIdx in _horarioSeleccionado[dia])
                 {
-                    if (i < bloques.Count)
-                        resultado.Add((idDia, bloques[i]));
+                    if (horaIdx < bloques.Count)
+                        resultado.Add((idDia, bloques[horaIdx]));
                 }
             }
-
             return resultado;
         }
 
@@ -377,27 +373,22 @@ namespace GestorHorarios.DOCENTES
 
         private void RestaurarHorarioEnCanvas(int idDocente)
         {
-            // Mapeo id_dia → nombre de día en el Canvas
             var diasMap = new Dictionary<int, string>
             {
                 { 1, "Lunes" }, { 2, "Martes" }, { 3, "Miércoles" },
                 { 4, "Jueves" }, { 5, "Viernes" }
             };
 
-            // Cargar bloques en orden para mapear id_bloque → índice de columna en el Canvas
-            var bloquesOrdenados = CargarBloques(); // lista de id_bloque ordenada por hora_inicio
+            var bloquesOrdenados = CargarBloques();
             var bloqueAIndice = new Dictionary<int, int>();
             for (int i = 0; i < bloquesOrdenados.Count; i++)
                 bloqueAIndice[bloquesOrdenados[i]] = i;
 
-            // Cargar disponibilidad real del docente desde BD
             var disponibilidad = new List<(int idDia, int idBloque)>();
             try
             {
                 using var conn = new SqlConnection(DatabaseService.GetConnectionString());
-                using var cmd = new SqlCommand(
-                    "SELECT id_dia, id_bloque FROM DisponibilidadDocente WHERE id_docente=@id ORDER BY id_dia, id_bloque",
-                    conn);
+                using var cmd = new SqlCommand("SELECT id_dia, id_bloque FROM DisponibilidadDocente WHERE id_docente=@id ORDER BY id_dia, id_bloque", conn);
                 cmd.Parameters.AddWithValue("@id", idDocente);
                 conn.Open();
                 using var reader = cmd.ExecuteReader();
@@ -408,28 +399,17 @@ namespace GestorHorarios.DOCENTES
 
             if (disponibilidad.Count == 0) return;
 
-            // Reconstruir _horarioSeleccionado agrupando bloques consecutivos por día
-            // Un "rango" en el Canvas es (índiceInicio, índiceFin) de bloques contiguos
-            var porDia = disponibilidad
-                .GroupBy(x => x.idDia)
-                .Where(g => diasMap.ContainsKey(g.Key));
+            var porDia = disponibilidad.GroupBy(x => x.idDia).Where(g => diasMap.ContainsKey(g.Key));
 
             foreach (var grupo in porDia)
             {
                 var dia = diasMap[grupo.Key];
                 var indices = grupo
                     .Where(x => bloqueAIndice.ContainsKey(x.idBloque))
-                    .Select(x => bloqueAIndice[x.idBloque])
-                    .OrderBy(i => i)
-                    .ToList();
+                    .Select(x => bloqueAIndice[x.idBloque]);
 
-                if (indices.Count == 0) continue;
-
-                // Usar el rango completo: del primer al último índice del día
-                int inicio = indices.First();
-                int fin = indices.Last();
-
-                _horarioSeleccionado[dia] = (inicio, fin);
+                // Guardamos los cuadros individuales encontrados en la base de datos
+                _horarioSeleccionado[dia] = new HashSet<int>(indices);
 
                 int diaIdx = Array.IndexOf(DIAS, dia);
                 if (diaIdx >= 0)
@@ -623,25 +603,70 @@ namespace GestorHorarios.DOCENTES
 
             var mainStack = new StackPanel();
 
-            // 1. Cabecera con color de la Carrera
+            // 1. Cabecera con color de la Carrera (AHORA ES CLICKEABLE)
             var headerBorder = new Border
             {
                 // Rosa bajito si es principal, gris claro si es secundaria
                 Background = new SolidColorBrush((Color)ColorConverter.ConvertFromString(isMain ? "#FCE4EC" : "#F5F5F5")),
                 CornerRadius = new CornerRadius(7, 7, 0, 0),
-                Padding = new Thickness(15, 10, 15, 10)
+                Padding = new Thickness(15, 10, 15, 10),
+                Cursor = Cursors.Hand // Cursor de manito para indicar que se puede hacer clic
             };
 
-            headerBorder.Child = new TextBlock
+            var headerGrid = new Grid();
+            headerGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+            headerGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+
+            var titleText = new TextBlock
             {
                 Text = $"{(isMain ? "Principal" : "Secundaria")}: {nombreCarrera}",
                 FontSize = 14,
                 FontWeight = FontWeights.Bold,
-                Foreground = (Brush)FindResource("GuindaBajo")
+                Foreground = (Brush)FindResource("GuindaBajo"),
+                VerticalAlignment = VerticalAlignment.Center
             };
+            Grid.SetColumn(titleText, 0);
+
+            // Icono de flecha (▼ expandido, ► colapsado)
+            var toggleIcon = new TextBlock
+            {
+                Text = isMain ? "▼" : "►",
+                FontSize = 14,
+                FontWeight = FontWeights.Bold,
+                Foreground = (Brush)FindResource("GuindaBajo"),
+                VerticalAlignment = VerticalAlignment.Center
+            };
+            Grid.SetColumn(toggleIcon, 1);
+
+            headerGrid.Children.Add(titleText);
+            headerGrid.Children.Add(toggleIcon);
+            headerBorder.Child = headerGrid;
             mainStack.Children.Add(headerBorder);
-            // 2. Contenedor de los Semestres
-            var contentStack = new StackPanel { Margin = new Thickness(15) };
+
+            // 2. Contenedor de los Semestres (AHORA TIENE VISIBILIDAD DINÁMICA)
+            var contentStack = new StackPanel
+            {
+                Margin = new Thickness(15),
+                // La principal empieza abierta, las secundarias empiezan cerradas para ahorrar espacio
+                Visibility = isMain ? Visibility.Visible : Visibility.Collapsed
+            };
+
+            // LÓGICA DEL ACORDEÓN: Expandir/colapsar al hacer clic en la cabecera
+            headerBorder.MouseLeftButtonDown += (s, e) =>
+            {
+                if (contentStack.Visibility == Visibility.Visible)
+                {
+                    contentStack.Visibility = Visibility.Collapsed;
+                    toggleIcon.Text = "►";
+                    headerBorder.CornerRadius = new CornerRadius(7); // Redondear abajo si está cerrado
+                }
+                else
+                {
+                    contentStack.Visibility = Visibility.Visible;
+                    toggleIcon.Text = "▼";
+                    headerBorder.CornerRadius = new CornerRadius(7, 7, 0, 0); // Cuadrado abajo si está abierto
+                }
+            };
 
             try
             {
@@ -826,7 +851,8 @@ namespace GestorHorarios.DOCENTES
             CanvasHorario.Children.Clear();
             _horarioSeleccionado.Clear();
 
-            double canvasWidth = LABEL_WIDTH + (HORAS_DISPONIBLES.Length * (RECT_WIDTH + SPACING));
+            // Le sumamos 30 píxeles extra al ancho total para que el último texto ("19:30") no se corte
+            double canvasWidth = LABEL_WIDTH + (HORAS_DISPONIBLES.Length * (RECT_WIDTH + SPACING)) + 30;
             CanvasHorario.Width = canvasWidth;
 
             GenerarEncabezadoHoras();
@@ -836,6 +862,8 @@ namespace GestorHorarios.DOCENTES
         private void GenerarEncabezadoHoras()
         {
             double xPos = LABEL_WIDTH + SPACING;
+
+            // 1. Dibujamos las 12 horas iniciales (7:30 a 18:30)
             foreach (var hora in HORAS_DISPONIBLES)
             {
                 var headerText = new TextBlock
@@ -849,8 +877,26 @@ namespace GestorHorarios.DOCENTES
                 Canvas.SetLeft(headerText, xPos);
                 Canvas.SetTop(headerText, 5);
                 CanvasHorario.Children.Add(headerText);
+
+                // Avanzamos la posición X para el siguiente cuadro
                 xPos += RECT_WIDTH + SPACING;
             }
+
+            // 2. Al salir del ciclo, xPos está exactamente en el borde derecho del último cuadro.
+            // Dibujamos manualmente la etiqueta "19:30" ahí para indicar la hora de salida.
+            var headerFinal = new TextBlock
+            {
+                Text = "19:30",
+                FontSize = 10,
+                FontWeight = FontWeights.Bold,
+                Foreground = (Brush)FindResource("GuindaBajo"),
+                TextAlignment = TextAlignment.Center
+            };
+
+            // Le restamos 5 píxeles a xPos para que el texto quede centrado visualmente sobre la línea final
+            Canvas.SetLeft(headerFinal, xPos - 5);
+            Canvas.SetTop(headerFinal, 5);
+            CanvasHorario.Children.Add(headerFinal);
         }
 
         private void GenerarFilasDias()
@@ -919,44 +965,93 @@ namespace GestorHorarios.DOCENTES
 
         private void Rect_Click(object sender, MouseButtonEventArgs e, string dia, int horaIdx, Color colorDia)
         {
+            // Si el día no existe en el diccionario, lo creamos
             if (!_horarioSeleccionado.ContainsKey(dia))
+                _horarioSeleccionado[dia] = new HashSet<int>();
+
+            var celdasDia = _horarioSeleccionado[dia];
+            bool modoEspacios = CheckBoxModoEspacios.IsChecked == true;
+
+            if (modoEspacios)
             {
-                // Sin selección: iniciar rango con una celda
-                if (!ValidarHorasDisponibles(dia, (horaIdx, horaIdx))) return;
-                _horarioSeleccionado[dia] = (horaIdx, horaIdx);
+                // ==========================================
+                // MODO ESPACIOS: Pinta/Despinta individualmente
+                // ==========================================
+                if (celdasDia.Contains(horaIdx))
+                {
+                    celdasDia.Remove(horaIdx);
+                }
+                else
+                {
+                    if (_horasAsignadas >= HORAS_MAXIMAS_PERMITIDAS)
+                    {
+                        MostrarAdvertencia($"El límite máximo configurado es {HORAS_MAXIMAS_PERMITIDAS}h.");
+                        return;
+                    }
+                    celdasDia.Add(horaIdx);
+                }
             }
             else
             {
-                var (horaInicio, horaFin) = _horarioSeleccionado[dia];
+                // ==========================================
+                // MODO RANGO: Estira desde el inicio al fin (Comportamiento Original)
+                // ==========================================
+                if (celdasDia.Count == 0)
+                {
+                    if (_horasAsignadas >= HORAS_MAXIMAS_PERMITIDAS)
+                    {
+                        MostrarAdvertencia($"El límite máximo configurado es {HORAS_MAXIMAS_PERMITIDAS}h.");
+                        return;
+                    }
+                    celdasDia.Add(horaIdx);
+                }
+                else
+                {
+                    int min = celdasDia.Min();
+                    int max = celdasDia.Max();
 
-                // Clic dentro del rango ya seleccionado → ignorar (usar clic derecho para borrar)
-                if (horaIdx >= horaInicio && horaIdx <= horaFin)
-                    return;
+                    // Si da clic adentro del rango que ya está pintado, lo ignoramos (igual que el original)
+                    if (horaIdx >= min && horaIdx <= max) return;
 
-                // Clic fuera del rango → expandir hacia ese extremo
-                var nuevoRango = horaIdx < horaInicio
-                    ? (horaIdx, horaFin)
-                    : (horaInicio, horaIdx);
+                    int nuevoMin = Math.Min(min, horaIdx);
+                    int nuevoMax = Math.Max(max, horaIdx);
 
-                if (!ValidarHorasDisponibles(dia, nuevoRango, reemplazando: true)) return;
-                _horarioSeleccionado[dia] = nuevoRango;
+                    // Calculamos cuántas horas EXTRA se van a pintar
+                    int horasNuevas = (nuevoMax - nuevoMin + 1) - celdasDia.Count;
+
+                    if (_horasAsignadas + horasNuevas > HORAS_MAXIMAS_PERMITIDAS)
+                    {
+                        MostrarAdvertencia($"No puedes estirar el rango porque superarías las {HORAS_MAXIMAS_PERMITIDAS}h semanales permitidas.");
+                        return;
+                    }
+
+                    // Rellenamos todos los huecos entre el mínimo y el máximo automáticamente
+                    for (int i = nuevoMin; i <= nuevoMax; i++)
+                    {
+                        celdasDia.Add(i);
+                    }
+                }
             }
+
             ActualizarHorario(dia, colorDia);
             ActualizarContadorHoras();
         }
 
-        // Clic derecho sobre cualquier celda del día: pide confirmación y borra el día completo
         private void Rect_RightClick(string dia, Color colorDia)
         {
-            if (!_horarioSeleccionado.ContainsKey(dia)) return;
+            if (!_horarioSeleccionado.ContainsKey(dia) || _horarioSeleccionado[dia].Count == 0) return;
 
-            var (ini, fin) = _horarioSeleccionado[dia];
-            string horaIni = HORAS_DISPONIBLES[ini];
-            string horaFin = HORAS_DISPONIBLES[fin];
-            int horas = fin - ini + 1;
+            // Extraemos los extremos para armar un mensaje bonito
+            int min = _horarioSeleccionado[dia].Min();
+            int max = _horarioSeleccionado[dia].Max();
+
+            string horaIni = HORAS_DISPONIBLES[min];
+            string horaFin = max == 11 ? "19:30" : HORAS_DISPONIBLES[max + 1];
+            int horasTotales = _horarioSeleccionado[dia].Count;
 
             var res = MessageBox.Show(
-                $"¿Eliminar el horario de {dia} ({horaIni} – {horaFin}, {horas}h)?\n" +
+                $"¿Eliminar la asignación del día {dia}?\n" +
+                $"Rango afectado: {horaIni} – {horaFin} ({horasTotales}h asignadas).\n\n" +
                 $"Esta acción solo afecta al formulario, no se guarda hasta presionar Guardar/Actualizar.",
                 $"Limpiar {dia}",
                 MessageBoxButton.YesNo,
@@ -964,7 +1059,7 @@ namespace GestorHorarios.DOCENTES
 
             if (res != MessageBoxResult.Yes) return;
 
-            _horarioSeleccionado.Remove(dia);
+            _horarioSeleccionado[dia].Clear();
             ActualizarHorario(dia, colorDia);
             ActualizarContadorHoras();
         }
@@ -972,35 +1067,15 @@ namespace GestorHorarios.DOCENTES
         // Valida que el nuevo rango no supere el límite absoluto de 40h.
         // El límite del TextBox (horas máximas del docente) se valida solo al guardar,
         // para que bajar el TextBox no bloquee editar el Canvas.
-        private bool ValidarHorasDisponibles(string dia, (int inicio, int fin) nuevoRango, bool reemplazando = false)
-        {
-            int horasNuevas = nuevoRango.fin - nuevoRango.inicio + 1;
 
-            int horasTotalesOtrosDias = _horarioSeleccionado
-                .Where(kv => kv.Key != dia)
-                .Sum(kv => kv.Value.horaFin - kv.Value.horaInicio + 1);
-
-            int totalProyectado = horasTotalesOtrosDias + horasNuevas;
-
-            if (totalProyectado > HORAS_MAXIMAS_PERMITIDAS)
-            {
-                MostrarAdvertencia(
-                    $"No puedes asignar {totalProyectado}h. " +
-                    $"El máximo absoluto permitido es {HORAS_MAXIMAS_PERMITIDAS}h semanales.");
-                return false;
-            }
-            return true;
-        }
 
         // Recalcula el total de horas asignadas en el Canvas y actualiza el TextBox
         private void ActualizarContadorHoras()
         {
-            _horasAsignadas = _horarioSeleccionado
-                .Sum(kv => kv.Value.horaFin - kv.Value.horaInicio + 1);
-
+            // Suma la cantidad total de cuadritos pintados en todos los días
+            _horasAsignadas = _horarioSeleccionado.Sum(kv => kv.Value.Count);
             TextboxHorasDiarias.Text = _horasAsignadas.ToString();
 
-            // Indicador visual: rojo si supera el máximo configurado
             bool excede = int.TryParse(TextboxHorasMaximas.Text, out int max)
                           && _horasAsignadas > Math.Min(max, HORAS_MAXIMAS_PERMITIDAS);
 
@@ -1041,8 +1116,8 @@ namespace GestorHorarios.DOCENTES
             var partes = (rect.Tag as string)?.Split('|');
             if (partes?.Length != 3 || !int.TryParse(partes[1], out int horaIdx)) return;
 
-            rect.Fill = _horarioSeleccionado.TryGetValue(dia, out var rango)
-                        && horaIdx >= rango.horaInicio && horaIdx <= rango.horaFin
+            // Verifica si el cuadrito específico está en nuestra lista para pintarlo
+            rect.Fill = _horarioSeleccionado.ContainsKey(dia) && _horarioSeleccionado[dia].Contains(horaIdx)
                 ? new SolidColorBrush(colorDia)
                 : Brushes.White;
         }

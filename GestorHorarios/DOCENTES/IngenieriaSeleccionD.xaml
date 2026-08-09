@@ -228,14 +228,30 @@
                     </Border>
 
                     <!-- TABLA HORARIO CON CANVAS -->
-                    <TextBlock FontSize="12"
-                               Foreground="#666666"
-                               Margin="0,0,0,10">
-                        <Run Text="Clic izquierdo"/>
-                        <Run Text=" para seleccionar/ampliar el rango. "/>
-                        <Run FontWeight="SemiBold" Foreground="#C62828" Text="Clic derecho"/>
-                        <Run Text=" sobre una celda del día para borrar ese día."/>
-                    </TextBlock>
+                    
+                    <Grid Margin="0,0,0,10">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="Auto"/>
+                            <ColumnDefinition Width="*"/>
+                        </Grid.ColumnDefinitions>
+
+                        <!-- EL NUEVO CHECKBOX -->
+                        <CheckBox x:Name="CheckBoxModoEspacios" 
+                                  Content="Modo Espacios (Individual)" 
+                                  FontWeight="Bold" 
+                                  Foreground="{StaticResource GuindaBajo}"
+                                  VerticalAlignment="Center" 
+                                  Margin="0,0,15,0"
+                                  Cursor="Hand"/>
+
+                        <!-- INSTRUCCIONES -->
+                        <TextBlock Grid.Column="1" FontSize="12" Foreground="#666666" VerticalAlignment="Center" TextWrapping="Wrap">
+                            <Run Text="Clic izquierdo"/>
+                            <Run Text=" para seleccionar/ampliar el rango. "/>
+                            <Run FontWeight="SemiBold" Foreground="#C62828" Text="Clic derecho"/>
+                            <Run Text=" sobre una celda del día para borrar ese día."/>
+                        </TextBlock>
+                    </Grid>
 
                     <ScrollViewer HorizontalScrollBarVisibility="Auto" 
                                   VerticalScrollBarVisibility="Disabled"

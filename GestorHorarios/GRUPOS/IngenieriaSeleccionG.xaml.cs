@@ -28,15 +28,12 @@ namespace GestorHorarios.GRUPOS
             _idCarrera = idCarrera;
             CargarTituloCarrera();
 
-            // NUEVO: Cargamos los ComboBox del formulario antes de cargar los grupos
             CargarOpcionesFormulario();
             CargarGrupos();
         }
 
-        // NUEVO: Método para llenar los ComboBox de Semestre y Turno
         private void CargarOpcionesFormulario()
         {
-            // Llenar Semestres (1 al 9)
             if (ComboBoxSemestre != null)
             {
                 ComboBoxSemestre.Items.Clear();
@@ -50,7 +47,6 @@ namespace GestorHorarios.GRUPOS
                 }
             }
 
-            // Llenar Turnos
             if (ComboBoxTurno != null)
             {
                 ComboBoxTurno.Items.Clear();
@@ -108,18 +104,14 @@ namespace GestorHorarios.GRUPOS
                     });
                 }
 
-                // Separar por ciclo: impares = B, pares = A
                 var cicloB = grupos.Where(g => g.Semestre % 2 != 0).OrderBy(g => g.Semestre).ToList();
                 var cicloA = grupos.Where(g => g.Semestre % 2 == 0).OrderBy(g => g.Semestre).ToList();
 
-                // Agrupar por semestre dentro de cada ciclo
                 PopularPanel(PanelCicloB, cicloB);
                 PopularPanel(PanelCicloA, cicloA);
 
-                if (cicloB.Count == 0)
-                    PanelCicloB.Children.Add(CrearMensajeVacio());
-                if (cicloA.Count == 0)
-                    PanelCicloA.Children.Add(CrearMensajeVacio());
+                if (cicloB.Count == 0) PanelCicloB.Children.Add(CrearMensajeVacio());
+                if (cicloA.Count == 0) PanelCicloA.Children.Add(CrearMensajeVacio());
             }
             catch (Exception ex)
             {
@@ -138,7 +130,6 @@ namespace GestorHorarios.GRUPOS
 
             foreach (var semGrupo in porSemestre)
             {
-                // Encabezado de semestre
                 panel.Children.Add(new TextBlock
                 {
                     Text = $"Semestre {semGrupo.Key}",
@@ -153,6 +144,9 @@ namespace GestorHorarios.GRUPOS
             }
         }
 
+        // ==========================================
+        // DISEÑO MODERNO DE LA TARJETA DEL GRUPO
+        // ==========================================
         private Border CrearCardGrupo(Grupo grupo)
         {
             var border = new Border
@@ -162,63 +156,103 @@ namespace GestorHorarios.GRUPOS
             };
 
             var grid = new Grid();
-            grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
-            grid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
-            grid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+            grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) }); // Nombre
+            grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(140) }); // Badge de Turno
+            grid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto }); // Botones
 
-            // Nombre + turno
-            var infoPanel = new StackPanel { VerticalAlignment = VerticalAlignment.Center };
-            infoPanel.Children.Add(new TextBlock
+            // 1. Título del Grupo
+            var nombreText = new TextBlock
             {
                 Text = grupo.Nombre,
                 FontSize = 16,
-                FontWeight = FontWeights.SemiBold,
-                Foreground = (Brush)FindResource("GuindaBajo")
-            });
-            infoPanel.Children.Add(new TextBlock
+                FontWeight = FontWeights.Bold,
+                Foreground = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#333333")),
+                VerticalAlignment = VerticalAlignment.Center
+            };
+            Grid.SetColumn(nombreText, 0);
+            grid.Children.Add(nombreText);
+
+            // 2. Insignia (Badge) del Turno con colores dinámicos
+            bool esMatutino = grupo.Turno.ToLower().Contains("matutino");
+            string badgeBgColor = esMatutino ? "#E8F5E9" : "#FFF3E0"; // Verde pastel o Naranja pastel
+            string badgeFgColor = esMatutino ? "#2E7D32" : "#E65100"; // Verde oscuro o Naranja oscuro
+
+            var turnoBadge = new Border
+            {
+                Background = new SolidColorBrush((Color)ColorConverter.ConvertFromString(badgeBgColor)),
+                CornerRadius = new CornerRadius(4),
+                Padding = new Thickness(10, 4, 10, 4),
+                HorizontalAlignment = HorizontalAlignment.Left,
+                VerticalAlignment = VerticalAlignment.Center
+            };
+            turnoBadge.Child = new TextBlock
             {
                 Text = $"Turno {grupo.Turno}",
                 FontSize = 12,
-                Foreground = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#888888")),
-                Margin = new Thickness(0, 2, 0, 0)
-            });
-            Grid.SetColumn(infoPanel, 0);
-            grid.Children.Add(infoPanel);
+                FontWeight = FontWeights.Bold,
+                Foreground = new SolidColorBrush((Color)ColorConverter.ConvertFromString(badgeFgColor))
+            };
+            Grid.SetColumn(turnoBadge, 1);
+            grid.Children.Add(turnoBadge);
 
-            // Botones
-            var botonesPanel = new StackPanel
+            // 3. Panel de Botones Modernos
+            var buttonStack = new StackPanel
             {
                 Orientation = Orientation.Horizontal,
                 VerticalAlignment = VerticalAlignment.Center,
                 Margin = new Thickness(10, 0, 0, 0)
             };
 
-            // MODIFICACIÓN: Añadir botón de Editar
-            var btnEditar = new Button
-            {
-                Content = "Editar",
-                Padding = new Thickness(12, 6, 12, 6),
-                Margin = new Thickness(0, 0, 5, 0),
-                Tag = grupo // Guardamos el objeto completo para poder editarlo
-            };
+            // Botón Editar (Gris Pizarra)
+            string pathLapiz = "M3 17.25V21h3.75L17.81 9.94l-3.75-3.75L3 17.25zM20.71 7.04c.39-.39.39-1.02 0-1.41l-2.34-2.34c-.39-.39-1.02-.39-1.41 0l-1.83 1.83 3.75 3.75 1.83-1.83z";
+            var btnEditar = CrearBotonAccion("Editar", pathLapiz, "#475569");
+            btnEditar.Tag = grupo;
             btnEditar.Click += EditarGrupo_Click;
-            botonesPanel.Children.Add(btnEditar);
 
-            var btnEliminar = new Button
-            {
-                Content = "Eliminar",
-                Padding = new Thickness(12, 6, 12, 6),
-                Background = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#E53935")),
-                Tag = grupo.IdGrupo
-            };
+            // Botón Eliminar (Rojo Moderno)
+            string pathBasura = "M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z";
+            var btnEliminar = CrearBotonAccion("Eliminar", pathBasura, "#E11D48");
+            btnEliminar.Tag = grupo.IdGrupo;
             btnEliminar.Click += EliminarGrupo_Click;
-            botonesPanel.Children.Add(btnEliminar);
 
-            Grid.SetColumn(botonesPanel, 2);
-            grid.Children.Add(botonesPanel);
+            buttonStack.Children.Add(btnEditar);
+            buttonStack.Children.Add(btnEliminar);
+
+            Grid.SetColumn(buttonStack, 2);
+            grid.Children.Add(buttonStack);
 
             border.Child = grid;
             return border;
+        }
+
+        // ==========================================
+        // GENERADOR AUTOMÁTICO DE BOTONES CON ÍCONOS
+        // ==========================================
+        private Button CrearBotonAccion(string texto, string pathData, string bgColor)
+        {
+            var btn = new Button
+            {
+                ToolTip = texto,
+                Background = new SolidColorBrush((Color)ColorConverter.ConvertFromString(bgColor)),
+                Style = (Style)FindResource("ModernButtonStyle"),
+                Margin = new Thickness(6, 0, 0, 0)
+            };
+
+            var path = new System.Windows.Shapes.Path
+            {
+                Data = Geometry.Parse(pathData),
+                Fill = Brushes.White,
+                Stretch = Stretch.Uniform,
+                Width = 13,
+                Height = 13
+            };
+
+            var sp = new StackPanel { Orientation = Orientation.Horizontal };
+            sp.Children.Add(path);
+            sp.Children.Add(new TextBlock { Text = texto, Margin = new Thickness(6, 0, 0, 0), VerticalAlignment = VerticalAlignment.Center, FontSize = 12, FontWeight = FontWeights.SemiBold });
+
+            btn.Content = sp;
+            return btn;
         }
 
         private static TextBlock CrearMensajeVacio() => new()
@@ -230,23 +264,26 @@ namespace GestorHorarios.GRUPOS
             Margin = new Thickness(0, 4, 0, 4)
         };
 
-        // NUEVO: Método para ocultar/mostrar formulario de grupos
+        // ==========================================
+        // LÓGICA DE FORMULARIOS Y BOTONES BÁSICOS
+        // ==========================================
         private void BotonMostrarAgregarGrupo_Click(object sender, RoutedEventArgs e)
         {
             if (PanelFormularioGrupo.Visibility == Visibility.Collapsed)
             {
                 PanelFormularioGrupo.Visibility = Visibility.Visible;
-                BotonMostrarAgregarGrupo.Content = "Cerrar";
+                BotonMostrarAgregarGrupo.Content = "X Cerrar formulario";
+                BotonMostrarAgregarGrupo.Background = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#475569"));
             }
             else
             {
                 LimpiarFormulario();
                 PanelFormularioGrupo.Visibility = Visibility.Collapsed;
-                BotonMostrarAgregarGrupo.Content = "Agregar Grupo";
+                BotonMostrarAgregarGrupo.Content = "+ Agregar Grupo";
+                BotonMostrarAgregarGrupo.Background = (Brush)FindResource("GuindaBajo");
             }
         }
 
-        // NUEVO: Limpiar el formulario
         private void LimpiarFormulario()
         {
             TextboxNombre.Clear();
@@ -256,7 +293,6 @@ namespace GestorHorarios.GRUPOS
             BotonGuardarGrupo.Content = "Guardar";
         }
 
-        // NUEVO: Lógica del botón Editar
         private void EditarGrupo_Click(object sender, RoutedEventArgs e)
         {
             if (sender is Button btn && btn.Tag is Grupo grupo)
@@ -264,7 +300,6 @@ namespace GestorHorarios.GRUPOS
                 _idGrupoEnEdicion = grupo.IdGrupo;
                 TextboxNombre.Text = grupo.Nombre;
 
-                // Seleccionar Semestre
                 foreach (ComboBoxItem item in ComboBoxSemestre.Items)
                 {
                     if ((int)item.Tag == grupo.Semestre)
@@ -274,7 +309,6 @@ namespace GestorHorarios.GRUPOS
                     }
                 }
 
-                // Seleccionar Turno
                 foreach (ComboBoxItem item in ComboBoxTurno.Items)
                 {
                     if (item.Tag.ToString() == grupo.Turno)
@@ -286,11 +320,11 @@ namespace GestorHorarios.GRUPOS
 
                 BotonGuardarGrupo.Content = "Actualizar";
                 BotonMostrarAgregarGrupo.Content = "Cancelar edición";
+                BotonMostrarAgregarGrupo.Background = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#475569"));
                 PanelFormularioGrupo.Visibility = Visibility.Visible;
             }
         }
 
-        // NUEVO: Guardar o Actualizar Grupo
         private void BotonGuardarGrupo_Click(object sender, RoutedEventArgs e)
         {
             if (string.IsNullOrWhiteSpace(TextboxNombre.Text) ||
@@ -312,13 +346,11 @@ namespace GestorHorarios.GRUPOS
 
                 if (_idGrupoEnEdicion == null)
                 {
-                    // INSERT
                     cmd.CommandText = @"INSERT INTO Grupos (nombre, semestre, turno, id_carrera) 
                                         VALUES (@nombre, @semestre, @turno, @id_carrera)";
                 }
                 else
                 {
-                    // UPDATE
                     cmd.CommandText = @"UPDATE Grupos 
                                         SET nombre = @nombre, semestre = @semestre, turno = @turno 
                                         WHERE id_grupo = @id_grupo";
@@ -338,7 +370,8 @@ namespace GestorHorarios.GRUPOS
 
                 LimpiarFormulario();
                 PanelFormularioGrupo.Visibility = Visibility.Collapsed;
-                BotonMostrarAgregarGrupo.Content = "Agregar Grupo";
+                BotonMostrarAgregarGrupo.Content = "+ Agregar Grupo";
+                BotonMostrarAgregarGrupo.Background = (Brush)FindResource("GuindaBajo");
 
                 CargarGrupos();
             }
@@ -348,12 +381,12 @@ namespace GestorHorarios.GRUPOS
             }
         }
 
-        // NUEVO: Lógica del botón Cancelar
         private void BotonCancelarGrupo_Click(object sender, RoutedEventArgs e)
         {
             LimpiarFormulario();
             PanelFormularioGrupo.Visibility = Visibility.Collapsed;
-            BotonMostrarAgregarGrupo.Content = "Agregar Grupo";
+            BotonMostrarAgregarGrupo.Content = "+ Agregar Grupo";
+            BotonMostrarAgregarGrupo.Background = (Brush)FindResource("GuindaBajo");
         }
 
         private void EliminarGrupo_Click(object sender, RoutedEventArgs e)
@@ -369,14 +402,12 @@ namespace GestorHorarios.GRUPOS
             try
             {
                 using var conn = new SqlConnection(DatabaseService.GetConnectionString());
-                using var cmd = new SqlCommand(
-                    "DELETE FROM Grupos WHERE id_grupo = @id", conn);
+                using var cmd = new SqlCommand("DELETE FROM Grupos WHERE id_grupo = @id", conn);
                 cmd.Parameters.AddWithValue("@id", idGrupo);
                 conn.Open();
                 cmd.ExecuteNonQuery();
 
-                MessageBox.Show("Grupo eliminado correctamente.",
-                    "Éxito", MessageBoxButton.OK, MessageBoxImage.Information);
+                MessageBox.Show("Grupo eliminado correctamente.", "Éxito", MessageBoxButton.OK, MessageBoxImage.Information);
                 CargarGrupos();
             }
             catch (Exception ex)

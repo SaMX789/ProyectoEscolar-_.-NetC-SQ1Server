@@ -98,13 +98,24 @@ namespace GestorHorarios.PROYECTOS
         {
             var materias = new List<Materia>();
             using var conn = new SqlConnection(DatabaseService.GetConnectionString());
-            using var cmd = new SqlCommand(@"SELECT id_materia, nombre, clave, creditos, semestre FROM Materias WHERE id_carrera = @id AND semestre = @sem ORDER BY nombre", conn);
-            cmd.Parameters.AddWithValue("@id", _idCarrera); cmd.Parameters.AddWithValue("@sem", semestre);
+
+            // AQUI ESTÁ LA MAGIA: Agregamos "AND id_estado = 1" a la consulta SQL
+            using var cmd = new SqlCommand(@"SELECT id_materia, nombre, clave, creditos, semestre FROM Materias WHERE id_carrera = @id AND semestre = @sem AND id_estado = 1 ORDER BY nombre", conn);
+
+            cmd.Parameters.AddWithValue("@id", _idCarrera);
+            cmd.Parameters.AddWithValue("@sem", semestre);
             conn.Open();
+
             using var reader = cmd.ExecuteReader();
             while (reader.Read())
             {
-                materias.Add(new Materia { IdMateria = Convert.ToInt32(reader["id_materia"]), Nombre = reader["nombre"].ToString() ?? "", Clave = reader["clave"].ToString() ?? "", Creditos = Convert.ToInt32(reader["creditos"]) });
+                materias.Add(new Materia
+                {
+                    IdMateria = Convert.ToInt32(reader["id_materia"]),
+                    Nombre = reader["nombre"].ToString() ?? "",
+                    Clave = reader["clave"].ToString() ?? "",
+                    Creditos = Convert.ToInt32(reader["creditos"])
+                });
             }
             return materias;
         }
