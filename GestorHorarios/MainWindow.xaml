@@ -8,6 +8,7 @@
         Height="700"
         Width="1200"
         WindowStartupLocation="CenterScreen"
+        WindowState="Maximized"
         Background="{StaticResource ColorWhitesmoke}">
 
     <Window.Resources>
