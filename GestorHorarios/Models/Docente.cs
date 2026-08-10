@@ -17,6 +17,7 @@ namespace GestorHorarios.Models
         public List<int> MateriasIds { get; set; } = new();
         public List<int> CarrerasSecundariasIds { get; set; } = new();
         public string Nombre { get; internal set; }
+        public int HorasFrenteGrupo { get; set; }
 
         // Propiedad clave para las restricciones de horario del motor matemático
         public HashSet<string> DisponibilidadBloques { get; set; } = new();

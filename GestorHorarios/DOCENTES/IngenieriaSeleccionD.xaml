@@ -184,14 +184,26 @@
                         <ComboBoxItem Content="MEDIO TIEMPO"/>
                     </ComboBox>
 
-                    <!-- HORAS MÁXIMAS -->
-                    <TextBlock Text="Horas m&#225;ximas semanales (m&#225;x. 40):"
-                               FontSize="12"
-                               Foreground="{StaticResource negroTitulos}"
-                               Margin="0,0,0,5"/>
-                    <TextBox x:Name="TextboxHorasMaximas"
-                             Style="{StaticResource FormFieldStyle}"
-                             Text="20"/>
+                    <!-- HORAS DEL CONTRATO Y HFG -->
+                    <Grid Margin="0,0,0,15">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*"/>
+                            <ColumnDefinition Width="20"/> <!-- Espacio -->
+                            <ColumnDefinition Width="*"/>
+                        </Grid.ColumnDefinitions>
+
+                        <!-- HORAS MÁXIMAS (DISPONIBILIDAD) -->
+                        <StackPanel Grid.Column="0">
+                            <TextBlock Text="Horas máximas semanales:" FontSize="12" Foreground="{StaticResource negroTitulos}" Margin="0,0,0,5"/>
+                            <TextBox x:Name="TextboxHorasMaximas" Style="{StaticResource FormFieldStyle}" Text="40"/>
+                        </StackPanel>
+
+                        <!-- HORAS FRENTE AL GRUPO (HFG) -->
+                        <StackPanel Grid.Column="2">
+                            <TextBlock Text="Horas Frente al Grupo (HFG):" FontSize="12" FontWeight="Bold" Foreground="#1976D2" Margin="0,0,0,5"/>
+                            <TextBox x:Name="TextboxHFG" Style="{StaticResource FormFieldStyle}" Text="0"/>
+                        </StackPanel>
+                    </Grid>
 
                     <!-- CONTADOR EN TIEMPO REAL -->
                     <Border Background="#FFF8E1"
