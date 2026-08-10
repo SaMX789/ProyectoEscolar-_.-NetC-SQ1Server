@@ -54,10 +54,14 @@ namespace GestorHorarios.PROYECTOS
         };
 
         public HorarioCarreraView() { InitializeComponent(); _proyecto = new Proyecto(); }
+
         public HorarioCarreraView(Proyecto proyecto, int idCarrera) : this()
         {
-            _proyecto = proyecto; _idCarrera = idCarrera;
-            CargarNombreCarrera(); CargarEncabezado(); CargarGruposConTablas();
+            _proyecto = proyecto;
+            _idCarrera = idCarrera;
+            CargarNombreCarrera();
+            CargarEncabezado();
+            CargarGruposConTablas();
         }
 
         private void CargarNombreCarrera()
@@ -67,7 +71,8 @@ namespace GestorHorarios.PROYECTOS
                 using var conn = new SqlConnection(DatabaseService.GetConnectionString());
                 using var cmd = new SqlCommand("sp_ObtenerNombreCarrera", conn) { CommandType = CommandType.StoredProcedure };
                 cmd.Parameters.AddWithValue("@id_carrera", _idCarrera);
-                conn.Open(); _nombreCarrera = cmd.ExecuteScalar()?.ToString() ?? "Carrera";
+                conn.Open();
+                _nombreCarrera = cmd.ExecuteScalar()?.ToString() ?? "Carrera";
             }
             catch { _nombreCarrera = "Carrera"; }
         }
@@ -98,13 +103,10 @@ namespace GestorHorarios.PROYECTOS
         {
             var materias = new List<Materia>();
             using var conn = new SqlConnection(DatabaseService.GetConnectionString());
-
             using var cmd = new SqlCommand(@"SELECT id_materia, nombre, clave, creditos, semestre FROM Materias WHERE id_carrera = @id AND semestre = @sem AND id_estado = 1 ORDER BY nombre", conn);
-
             cmd.Parameters.AddWithValue("@id", _idCarrera);
             cmd.Parameters.AddWithValue("@sem", semestre);
             conn.Open();
-
             using var reader = cmd.ExecuteReader();
             while (reader.Read())
             {
@@ -123,8 +125,15 @@ namespace GestorHorarios.PROYECTOS
         {
             var horarios = new List<HorarioAsignado>();
             using var conn = new SqlConnection(DatabaseService.GetConnectionString());
-            using var cmd = new SqlCommand(@"SELECT h.id_dia, h.id_bloque, m.nombre AS Materia, d.nombre AS Docente, h.id_docente FROM HorarioDetalle h INNER JOIN Materias m ON h.id_materia = m.id_materia LEFT JOIN Docentes d ON h.id_docente = d.id_docente WHERE h.id_grupo = @idGrupo AND h.id_proyecto = @idProyecto", conn);
-            cmd.Parameters.AddWithValue("@idGrupo", idGrupo); cmd.Parameters.AddWithValue("@idProyecto", _proyecto.IdProyecto);
+
+            // SE ACTUALIZÓ PARA USAR EL PROCEDIMIENTO ALMACENADO
+            using var cmd = new SqlCommand("sp_GetHorarioDelGrupo", conn)
+            {
+                CommandType = CommandType.StoredProcedure
+            };
+            cmd.Parameters.AddWithValue("@idGrupo", idGrupo);
+            cmd.Parameters.AddWithValue("@idProyecto", _proyecto.IdProyecto);
+
             conn.Open();
             using var reader = cmd.ExecuteReader();
             while (reader.Read())
@@ -135,7 +144,9 @@ namespace GestorHorarios.PROYECTOS
                     BloqueHora = Convert.ToInt32(reader["id_bloque"]),
                     NombreMateria = reader["Materia"].ToString() ?? "",
                     NombreDocente = reader["Docente"]?.ToString() ?? "",
-                    IdDocente = reader["id_docente"] != DBNull.Value ? Convert.ToInt32(reader["id_docente"]) : 0
+                    IdDocente = reader["id_docente"] != DBNull.Value ? Convert.ToInt32(reader["id_docente"]) : 0,
+                    NombreSalon = reader["Salon"]?.ToString() ?? "",
+                    NombreEdificio = reader["Edificio"]?.ToString() ?? ""
                 });
             }
             return horarios;
@@ -208,15 +219,59 @@ namespace GestorHorarios.PROYECTOS
 
                 for (int c = 1; c <= 5; c++)
                 {
-                    var cell = new Border { Background = bloque.EsReceso ? new SolidColorBrush((Color)ColorConverter.ConvertFromString("#FFECB3")) : Brushes.White, BorderBrush = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#DDDDDD")), BorderThickness = new Thickness(0, 0, 0.5, 0.5), Padding = new Thickness(4, 6, 4, 6), MinHeight = bloque.EsReceso ? 30 : 45 };
-                    if (bloque.EsReceso) { cell.Child = new TextBlock { Text = c == 3 ? "R E C E S O" : "", FontSize = 11, FontWeight = FontWeights.Bold, Foreground = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#E65100")), HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center }; }
+                    var cell = new Border { Background = bloque.EsReceso ? new SolidColorBrush((Color)ColorConverter.ConvertFromString("#FFECB3")) : Brushes.White, BorderBrush = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#DDDDDD")), BorderThickness = new Thickness(0, 0, 0.5, 0.5), Padding = new Thickness(4, 6, 4, 6), MinHeight = bloque.EsReceso ? 30 : 55 }; // MinHeight aumentado un poco para que quepan los salones
+
+                    if (bloque.EsReceso)
+                    {
+                        cell.Child = new TextBlock { Text = c == 3 ? "R E C E S O" : "", FontSize = 11, FontWeight = FontWeights.Bold, Foreground = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#E65100")), HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center };
+                    }
                     else
                     {
                         var clase = horarioAsignado.FirstOrDefault(h => h.DiaSemana == c && h.BloqueHora == bloque.IdBloque);
                         bool sinMaestro = clase == null || string.IsNullOrEmpty(clase.NombreDocente) || clase.IdDocente == -1 || clase.NombreDocente == "0";
-                        string textoCelda = clase != null ? (sinMaestro ? $"{clase.NombreMateria}" : $"{clase.NombreMateria}\n({clase.NombreDocente})") : "";
-                        cell.Child = new TextBlock { Text = textoCelda, FontSize = 10, TextWrapping = TextWrapping.Wrap, HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center, TextAlignment = TextAlignment.Center, FontWeight = clase != null ? FontWeights.SemiBold : FontWeights.Normal };
-                        if (clase != null) cell.Background = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#E8EAF6"));
+
+                        if (clase != null)
+                        {
+                            // SE ACTUALIZÓ PARA MOSTRAR LA MATERIA, EL MAESTRO Y EL SALÓN APILADOS
+                            var celdaContenido = new StackPanel { VerticalAlignment = VerticalAlignment.Center, HorizontalAlignment = HorizontalAlignment.Center };
+
+                            celdaContenido.Children.Add(new TextBlock
+                            {
+                                Text = clase.NombreMateria,
+                                FontSize = 10,
+                                FontWeight = FontWeights.SemiBold,
+                                TextAlignment = TextAlignment.Center,
+                                TextWrapping = TextWrapping.Wrap
+                            });
+
+                            if (!sinMaestro)
+                            {
+                                celdaContenido.Children.Add(new TextBlock
+                                {
+                                    Text = $"({clase.NombreDocente})",
+                                    FontSize = 9,
+                                    Foreground = Brushes.DarkGray,
+                                    TextAlignment = TextAlignment.Center,
+                                    TextWrapping = TextWrapping.Wrap
+                                });
+                            }
+
+                            string textoSalon = string.IsNullOrEmpty(clase.NombreSalon)
+    ? "[Sin Salón]"
+    : $"[{clase.NombreSalon} - {clase.NombreEdificio}]";
+                            celdaContenido.Children.Add(new TextBlock
+                            {
+                                Text = textoSalon,
+                                FontSize = 10,
+                                FontWeight = FontWeights.Bold,
+                                Foreground = string.IsNullOrEmpty(clase.NombreSalon) ? Brushes.Red : new SolidColorBrush((Color)ColorConverter.ConvertFromString("#2E7D32")),
+                                TextAlignment = TextAlignment.Center,
+                                Margin = new Thickness(0, 3, 0, 0)
+                            });
+
+                            cell.Child = celdaContenido;
+                            cell.Background = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#E8EAF6"));
+                        }
                     }
                     Grid.SetRow(cell, r + 1); Grid.SetColumn(cell, c); grid.Children.Add(cell);
                 }
@@ -251,7 +306,6 @@ namespace GestorHorarios.PROYECTOS
                 string nombreDocente = sinMaestro ? "(Por asignar)" : clase.NombreDocente;
 
                 AgregarCeldaTexto(grid, i + 1, 0, m.Nombre, bg);
-                // Hacemos que la clave de la materia sea un enlace clickeable
                 var cellClave = AgregarCeldaTexto(grid, i + 1, 1, m.Clave, bg, foreground: "#1976D2", esEnlace: true);
                 cellClave.Cursor = Cursors.Hand;
                 cellClave.ToolTip = "Ver lista de docentes y sus horas para esta materia";
@@ -296,12 +350,11 @@ namespace GestorHorarios.PROYECTOS
 
             var horarioPersonal = new List<HorarioPersonal>();
             var disponibilidad = new HashSet<string>();
-            int hfgAsignadas = 0; // Variable para guardar el HFG del maestro
+            int hfgAsignadas = 0;
 
             using var conn = new SqlConnection(DatabaseService.GetConnectionString());
             conn.Open();
 
-            // 1. Obtener HFG (Horas Frente a Grupo) del contrato del docente
             using (var cmdHfg = new SqlCommand("SELECT horas_frente_grupo FROM Docentes WHERE id_docente = @id", conn))
             {
                 cmdHfg.Parameters.AddWithValue("@id", idDocente);
@@ -312,7 +365,6 @@ namespace GestorHorarios.PROYECTOS
                 }
             }
 
-            // 2. Extraer las clases del horario
             using (var cmd = new SqlCommand("sp_GetHorarioPersonalDocente", conn) { CommandType = CommandType.StoredProcedure })
             {
                 cmd.Parameters.AddWithValue("@id_proyecto", _proyecto.IdProyecto);
@@ -330,7 +382,6 @@ namespace GestorHorarios.PROYECTOS
                 }
             }
 
-            // 3. Extraer disponibilidad
             using (var cmdDisp = new SqlCommand("SELECT id_dia, id_bloque FROM DisponibilidadDocente WHERE id_docente = @id", conn))
             {
                 cmdDisp.Parameters.AddWithValue("@id", idDocente);
@@ -341,7 +392,6 @@ namespace GestorHorarios.PROYECTOS
                 }
             }
 
-            // ACTUALIZAR TEXTO CON AMBOS VALORES (Contrato vs Realidad)
             TxtModalTotalHoras.Text = $"HFG Asignadas: {hfgAsignadas}   |   Horas Repartidas: {horarioPersonal.Count}";
 
             var materiasUnicas = horarioPersonal.Select(h => h.Materia).Distinct().ToList();
@@ -468,7 +518,6 @@ namespace GestorHorarios.PROYECTOS
             try
             {
                 using var conn = new SqlConnection(DatabaseService.GetConnectionString());
-                // Apuntamos al nuevo SP que usa tu logica de CLAVES
                 using var cmd = new SqlCommand("sp_GetDocentesAsignablesAMateria", conn)
                 {
                     CommandType = CommandType.StoredProcedure
@@ -509,7 +558,6 @@ namespace GestorHorarios.PROYECTOS
                     gridInfo.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
                     gridInfo.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
 
-                    // Panel para Nombre y Carrera
                     var stackTexto = new StackPanel { VerticalAlignment = VerticalAlignment.Center };
                     stackTexto.Children.Add(new TextBlock
                     {
@@ -529,7 +577,6 @@ namespace GestorHorarios.PROYECTOS
                     Grid.SetColumn(stackTexto, 0);
                     gridInfo.Children.Add(stackTexto);
 
-                    // Badges de horas
                     var stackHoras = new StackPanel { Orientation = Orientation.Horizontal, VerticalAlignment = VerticalAlignment.Center };
 
                     string colorRepartidas = repartidas > hfg ? "#D32F2F" : (repartidas == hfg ? "#388E3C" : "#1976D2");
@@ -562,7 +609,23 @@ namespace GestorHorarios.PROYECTOS
             ModalDocentesMateria.Visibility = Visibility.Collapsed;
         }
 
-        public class HorarioAsignado { public int DiaSemana { get; set; } public int BloqueHora { get; set; } public string NombreMateria { get; set; } = ""; public string NombreDocente { get; set; } = ""; public int IdDocente { get; set; } }
-        public class HorarioPersonal { public int Dia { get; set; } public int Bloque { get; set; } public string Materia { get; set; } = ""; public string Grupo { get; set; } = ""; }
+        public class HorarioAsignado
+        {
+            public int DiaSemana { get; set; }
+            public int BloqueHora { get; set; }
+            public string NombreMateria { get; set; } = "";
+            public string NombreDocente { get; set; } = "";
+            public int IdDocente { get; set; }
+            public string NombreSalon { get; set; } = "";
+            public string NombreEdificio { get; set; } = "";
+        }
+
+        public class HorarioPersonal
+        {
+            public int Dia { get; set; }
+            public int Bloque { get; set; }
+            public string Materia { get; set; } = "";
+            public string Grupo { get; set; } = "";
+        }
     }
 }
