@@ -73,9 +73,36 @@
 
                     <TextBlock Text="Edificio:" FontSize="13" Foreground="#444" Margin="0,0,0,4"/>
                     <ComboBox x:Name="ComboBoxEdificio"
-                              Height="35" Margin="0,0,0,16"/>
+                              Height="35" Margin="0,0,0,12"/>
 
-                    <StackPanel Orientation="Horizontal" HorizontalAlignment="Center">
+                    <!-- NUEVOS CAMPOS: Selección de Carreras -->
+                    <TextBlock Text="Número de carreras permitidas:" FontSize="13" Foreground="#444" Margin="0,0,0,4"/>
+                    <ComboBox x:Name="ComboBoxNumCarreras"
+                              Height="35" Margin="0,0,0,12"
+                              SelectionChanged="ComboBoxNumCarreras_SelectionChanged">
+                        <ComboBoxItem Content="1 Carrera" Tag="1" IsSelected="True"/>
+                        <ComboBoxItem Content="2 Carreras" Tag="2"/>
+                        <ComboBoxItem Content="3 Carreras" Tag="3"/>
+                    </ComboBox>
+
+                    <TextBlock Text="Carrera Principal:" FontSize="13" Foreground="#444" Margin="0,0,0,4"/>
+                    <ComboBox x:Name="ComboBoxCarrera1"
+                              Height="35" Margin="0,0,0,12"/>
+
+                    <StackPanel x:Name="PanelCarrera2" Visibility="Collapsed">
+                        <TextBlock Text="Carrera Secundaria:" FontSize="13" Foreground="#444" Margin="0,0,0,4"/>
+                        <ComboBox x:Name="ComboBoxCarrera2"
+                                  Height="35" Margin="0,0,0,12"/>
+                    </StackPanel>
+
+                    <StackPanel x:Name="PanelCarrera3" Visibility="Collapsed">
+                        <TextBlock Text="Carrera Terciaria:" FontSize="13" Foreground="#444" Margin="0,0,0,4"/>
+                        <ComboBox x:Name="ComboBoxCarrera3"
+                                  Height="35" Margin="0,0,0,12"/>
+                    </StackPanel>
+                    <!-- FIN DE NUEVOS CAMPOS -->
+
+                    <StackPanel Orientation="Horizontal" HorizontalAlignment="Center" Margin="0,10,0,0">
                         <Button x:Name="BotonGuardarSalon"
                                 Content="Guardar"
                                 Padding="20,10" Margin="0,0,10,0"
