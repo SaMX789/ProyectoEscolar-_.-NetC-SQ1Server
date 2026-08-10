@@ -13,7 +13,9 @@
                 
                 <!-- Encabezado -->
                 <Border Background="White" CornerRadius="10" Padding="30,20" Margin="0,0,0,25">
-                    <Border.Effect><DropShadowEffect Color="#DDDDDD" Direction="270" ShadowDepth="2" BlurRadius="10" Opacity="0.3"/></Border.Effect>
+                    <Border.Effect>
+                        <DropShadowEffect Color="#DDDDDD" Direction="270" ShadowDepth="2" BlurRadius="10" Opacity="0.3"/>
+                    </Border.Effect>
                     <StackPanel HorizontalAlignment="Center">
                         <TextBlock x:Name="TxtTitulo" Text="Horarios - Carrera" FontSize="26" FontWeight="Bold" Foreground="{StaticResource GuindaBajo}" HorizontalAlignment="Center"/>
                         <TextBlock x:Name="TxtSubtitulo" Text="Ciclo A - 2026" FontSize="14" Foreground="#666666" HorizontalAlignment="Center" Margin="0,5,0,0"/>
@@ -25,11 +27,10 @@
                 
             </StackPanel>
         </ScrollViewer>
-
-        <!-- NUEVO: VENTANA MODAL (CUADRO DEL DOCENTE MAS AMPLIO) -->
-        <Grid x:Name="ModalDocente" Visibility="Collapsed" Background="#99000000" Panel.ZIndex="100">
-            <!-- Aumentamos MaxWidth a 1200 para hacerlo mucho mas amplio -->
-            <Border Background="White" CornerRadius="12" Margin="40" Padding="0" VerticalAlignment="Center" HorizontalAlignment="Center" MaxWidth="1200" MaxHeight="800">
+        
+        <!-- NUEVO MODAL: LISTA DE DOCENTES POR MATERIA (ZIndex 99 para quedar debajo del horario personal) -->
+        <Grid x:Name="ModalDocentesMateria" Visibility="Collapsed" Background="#99000000" Panel.ZIndex="99">
+            <Border Background="White" CornerRadius="12" Margin="40" Padding="0" VerticalAlignment="Center" HorizontalAlignment="Center" MaxWidth="650" MaxHeight="600" Width="600">
                 <Border.Effect>
                     <DropShadowEffect Color="Black" Opacity="0.4" BlurRadius="15"/>
                 </Border.Effect>
@@ -37,6 +38,46 @@
                     <Grid.RowDefinitions>
                         <RowDefinition Height="Auto"/>
                         <RowDefinition Height="*"/>
+                    </Grid.RowDefinitions>
+                    
+                    <!-- Cabecera -->
+                    <Border Grid.Row="0" Background="#1976D2" CornerRadius="12,12,0,0" Padding="20,15">
+                        <Grid>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*"/>
+                                <ColumnDefinition Width="Auto"/>
+                            </Grid.ColumnDefinitions>
+                            <StackPanel>
+                                <TextBlock Text="Docentes disponibles para la asignatura" FontSize="18" FontWeight="Bold" Foreground="White"/>
+                                <TextBlock x:Name="TxtModalNombreMateria" Text="Nombre de la Materia" FontSize="14" FontWeight="SemiBold" Foreground="#BBDEFB" Margin="0,4,0,0"/>
+                            </StackPanel>
+                            <!-- Boton Cerrar -->
+                            <Button Grid.Column="1" Content="X" Width="35" Height="35" FontSize="16" Background="Transparent" Foreground="White" BorderThickness="0" FontWeight="Bold" Cursor="Hand" Click="CerrarModalMateria_Click" HorizontalAlignment="Right" VerticalAlignment="Top"/>
+                        </Grid>
+                    </Border>
+                    
+                    <!-- Lista de Docentes -->
+                    <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto" Margin="20">
+                        <StackPanel x:Name="PanelListaDocentesMateria">
+                            <!-- Las tarjetas de los maestros se generaran desde C# -->
+                        </StackPanel>
+                    </ScrollViewer>
+                </Grid>
+            </Border>
+        </Grid>
+
+        <!-- NUEVO: VENTANA MODAL (CUADRO DEL DOCENTE MAS AMPLIO) -->
+        <Grid x:Name="ModalDocente" Visibility="Collapsed" Background="#99000000" Panel.ZIndex="100">
+            <!-- MaxWidth aumentado a 1200 para hacerlo muy espacioso -->
+            <Border Background="White" CornerRadius="12" Margin="40" Padding="0" VerticalAlignment="Center" HorizontalAlignment="Center" MaxWidth="1200" MaxHeight="800">
+                <Border.Effect>
+                    <DropShadowEffect Color="Black" Opacity="0.4" BlurRadius="15"/>
+                </Border.Effect>
+                <Grid>
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto"/> <!-- Cabecera -->
+                        <RowDefinition Height="Auto"/> <!-- Resumen Materias y Horas -->
+                        <RowDefinition Height="*"/>    <!-- Tabla Horario -->
                     </Grid.RowDefinitions>
                     
                     <!-- Cabecera del Modal -->
@@ -55,12 +96,34 @@
                         </Grid>
                     </Border>
                     
-                    <!-- Cuerpo del Modal (La cuadricula) -->
-                    <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto" Margin="20">
+                    <!-- Resumen de Materias y Horas -->
+                    <Border Grid.Row="1" Background="#F8F9FA" BorderBrush="#E0E0E0" BorderThickness="0,0,0,1" Padding="20,10">
                         <StackPanel>
-                            <TextBlock x:Name="TxtModalTotalHoras" Text="Total de Horas Asignadas: 0" FontSize="15" FontWeight="Bold" Foreground="#333333" Margin="0,0,0,15"/>
-                            <Grid x:Name="GridHorarioDocente"/>
+                            <!-- Contador de horas original -->
+                            <TextBlock x:Name="TxtModalTotalHoras" Text="Total de Horas Asignadas: 0" FontSize="14" FontWeight="Bold" Foreground="#333333" Margin="0,0,0,8"/>
+                            
+                            <!-- Lista de materias -->
+                            <TextBlock Text="Materias impartidas en este ciclo:" FontWeight="Bold" Foreground="#444444" FontSize="13"/>
+                            <TextBlock x:Name="TxtMateriasLista" Text="..." TextWrapping="Wrap" Foreground="#1976D2" FontSize="13" Margin="0,4,0,0" FontWeight="SemiBold"/>
                         </StackPanel>
+                    </Border>
+                    
+                    <!-- Cuerpo del Modal (La cuadricula) -->
+                    <ScrollViewer Grid.Row="2" VerticalScrollBarVisibility="Auto" Margin="20">
+                        <Grid x:Name="GridHorarioDocente">
+                            <Grid.ColumnDefinitions>
+                                <!-- Columna de Horas fija -->
+                                <ColumnDefinition Width="100"/>
+                                <!-- 5 Columnas de Dias que se reparten el espacio EQUITATIVAMENTE -->
+                                <ColumnDefinition Width="*"/>
+                                <ColumnDefinition Width="*"/>
+                                <ColumnDefinition Width="*"/>
+                                <ColumnDefinition Width="*"/>
+                                <ColumnDefinition Width="*"/>
+                            </Grid.ColumnDefinitions>
+                            
+                            <!-- Las filas se inyectaran desde el codigo C# -->
+                        </Grid>
                     </ScrollViewer>
                 </Grid>
             </Border>

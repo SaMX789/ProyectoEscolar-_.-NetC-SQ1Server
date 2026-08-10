@@ -412,6 +412,51 @@ namespace GestorHorarios.PROYECTOS
             return border;
         }
 
+        private async void BtnAsignarSalones_Click(object sender, RoutedEventArgs e)
+        {
+            var result = MessageBox.Show(
+                "Este proceso asignará salones a los horarios ya generados, minimizando los cambios de aula.\n\n¿Deseas continuar?",
+                "Asignar Salones", MessageBoxButton.YesNo, MessageBoxImage.Information);
+
+            if (result != MessageBoxResult.Yes) return;
+
+            BtnGenerarTodos.IsEnabled = false;
+            BtnAnalisisPrevio.IsEnabled = false;
+            BtnAsignarSalones.IsEnabled = false;
+            BarraProgreso.Visibility = Visibility.Visible;
+            TxtProgreso.Visibility = Visibility.Visible;
+            BarraProgreso.IsIndeterminate = true;
+            TxtProgreso.Text = "Calculando la distribución óptima de salones...";
+
+            try
+            {
+                var asignador = new AsignadorSalonesService();
+                bool exito = await asignador.EjecutarAsignacionSalonesAsync(_proyecto.IdProyecto);
+
+                if (exito)
+                {
+                    MessageBox.Show("¡Los salones han sido asignados exitosamente!", "Éxito", MessageBoxButton.OK, MessageBoxImage.Information);
+                }
+                else
+                {
+                    MessageBox.Show("No se encontró una distribución viable. Revisa si hay más clases simultáneas que salones.", "Advertencia", MessageBoxButton.OK, MessageBoxImage.Warning);
+                }
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show($"Ocurrió un error al asignar: {ex.Message}", "Error", MessageBoxButton.OK, MessageBoxImage.Error);
+            }
+            finally
+            {
+                BtnGenerarTodos.IsEnabled = true;
+                BtnAnalisisPrevio.IsEnabled = true;
+                BtnAsignarSalones.IsEnabled = true;
+                BarraProgreso.IsIndeterminate = false;
+                BarraProgreso.Visibility = Visibility.Collapsed;
+                TxtProgreso.Visibility = Visibility.Collapsed;
+            }
+        }
+
         private void CerrarModalDiagnostico_Click(object sender, RoutedEventArgs e)
         {
             ModalDiagnostico.Visibility = Visibility.Collapsed;

@@ -41,7 +41,8 @@ namespace GestorHorarios.Services
 
                     if (!docentes.Any(d => d.IdDocente == -1))
                     {
-                        docentes.Add(new Docente { IdDocente = -1, NombreCompleto = "Sin Maestro Asignado", MateriasIds = new List<int>(), HorasMaximas = 999 });
+                        // Agregamos HFG = 999 al comodín para que nunca se sature
+                        docentes.Add(new Docente { IdDocente = -1, NombreCompleto = "Sin Maestro Asignado", MateriasIds = new List<int>(), HorasMaximas = 999, HorasFrenteGrupo = 999 });
                     }
 
                     CargarOcupacionPrevia(idProyecto, idCarrera, docentes, out var horasPrevias, out var bloquesOcupadosPrevios);
@@ -77,8 +78,9 @@ namespace GestorHorarios.Services
                         {
                             var docentesCapaces = docentes.Where(doc => doc.IdDocente != -1 && doc.MateriasIds.Contains(m.IdMateria)).ToList();
 
+                            // EL LÍMITE AHORA SON LAS HORAS FRENTE A GRUPO (HFG)
                             var docentesConCapacidad = docentesCapaces.Where(d =>
-                                (horasAsignadasPorMaestro[d.IdDocente] + m.Creditos) <= d.HorasMaximas
+                                (horasAsignadasPorMaestro[d.IdDocente] + m.Creditos) <= d.HorasFrenteGrupo
                             ).ToList();
 
                             var docentesDisponibles = docentesConCapacidad.Where(d =>
@@ -90,9 +92,18 @@ namespace GestorHorarios.Services
 
                             Docente docenteElegido = null;
                             if (pool.Count > 0)
-                                docenteElegido = pool.OrderBy(d => d.HorasMaximas).ThenBy(d => horasAsignadasPorMaestro[d.IdDocente]).First();
+                            {
+                                // HEURÍSTICA: Ordenar primero a los que tienen MENOS HFG (Medio tiempo)
+                                // y después a los que tienen menos carga actual (Balanceo equitativo)
+                                docenteElegido = pool
+                                    .OrderBy(d => d.HorasFrenteGrupo)
+                                    .ThenBy(d => horasAsignadasPorMaestro[d.IdDocente])
+                                    .First();
+                            }
                             else
+                            {
                                 docenteElegido = docentes.First(d => d.IdDocente == -1);
+                            }
 
                             materiaDocenteAsignado[$"{g.IdGrupo}_{m.IdMateria}"] = docenteElegido.IdDocente;
                             horasAsignadasPorMaestro[docenteElegido.IdDocente] += m.Creditos;
@@ -265,7 +276,8 @@ namespace GestorHorarios.Services
                         if (clasesSemanalesDocente.Count > 0)
                         {
                             int ocupacionPrevia = horasPrevias[doc.IdDocente];
-                            int limiteRestante = Math.Max(0, doc.HorasMaximas - ocupacionPrevia);
+                            // RESTRICCIÓN DE IA POR HFG: Solo ocupará hasta llegar a sus horas frente al grupo
+                            int limiteRestante = Math.Max(0, doc.HorasFrenteGrupo - ocupacionPrevia);
                             model.Add(LinearExpr.Sum(clasesSemanalesDocente) <= limiteRestante);
                         }
                     }
@@ -290,9 +302,6 @@ namespace GestorHorarios.Services
             });
         }
 
-        // ====================================================================
-        // NUEVO MÉTODO: Obtiene el ciclo ('A' o 'B') para saber qué semestres ignorar
-        // ====================================================================
         private string ObtenerCicloProyecto(int idProyecto)
         {
             try
@@ -400,11 +409,18 @@ namespace GestorHorarios.Services
                 while (reader.Read())
                 {
                     int id = Convert.ToInt32(reader["id_docente"]);
+
+                    // Lectura segura para HFG (Si el SP no la trae, devuelve 0 por defecto)
+                    int hfg = 0;
+                    try { hfg = reader["horas_frente_grupo"] != DBNull.Value ? Convert.ToInt32(reader["horas_frente_grupo"]) : 0; }
+                    catch { /* Ignorar si no viene en el SP aún */ }
+
                     dictDocentes[id] = new Docente
                     {
                         IdDocente = id,
                         NombreCompleto = reader["NombreCompleto"].ToString() ?? "",
                         HorasMaximas = reader["HorasMaximas"] != DBNull.Value ? Convert.ToInt32(reader["HorasMaximas"]) : 20,
+                        HorasFrenteGrupo = hfg, // SE ASIGNA EL HFG DE LA BASE DE DATOS
                         IdCarreraPrincipal = reader["IdCarreraPrincipal"] != DBNull.Value ? Convert.ToInt32(reader["IdCarreraPrincipal"]) : 0,
                         MateriasIds = new List<int>(),
                         DisponibilidadBloques = new HashSet<string>()

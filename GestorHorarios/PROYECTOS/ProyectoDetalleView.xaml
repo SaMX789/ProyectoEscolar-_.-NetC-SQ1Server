@@ -37,10 +37,32 @@
                 </Trigger>
             </Style.Triggers>
         </Style>
+
+        <Style x:Key="BotonAccionStyle" TargetType="Button">
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border Background="{TemplateBinding Background}" CornerRadius="8" Padding="{TemplateBinding Padding}">
+                            <Border.Effect>
+                                <DropShadowEffect Color="Black" Opacity="0.2" BlurRadius="8" ShadowDepth="3" Direction="270"/>
+                            </Border.Effect>
+                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                        </Border>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+            <Style.Triggers>
+                <Trigger Property="IsMouseOver" Value="True">
+                    <Setter Property="Opacity" Value="0.9"/>
+                </Trigger>
+                <Trigger Property="IsPressed" Value="True">
+                    <Setter Property="Opacity" Value="0.75"/>
+                </Trigger>
+            </Style.Triggers>
+        </Style>
     </UserControl.Resources>
 
     <Grid>
-        <!-- CONTENIDO PRINCIPAL DEL DASHBOARD -->
         <ScrollViewer VerticalScrollBarVisibility="Auto">
             <StackPanel Margin="40,30" MaxWidth="1100" HorizontalAlignment="Center">
 
@@ -76,24 +98,42 @@
                         <TextBlock Text="Realiza un analisis de viabilidad antes de asignar a los profesores." FontSize="13" Foreground="#666666" HorizontalAlignment="Center" Margin="0,0,0,20"/>
                         
                         <StackPanel Orientation="Horizontal" HorizontalAlignment="Center">
-                            <!-- BOTON DE ANALISIS -->
-                            <Button x:Name="BtnAnalisisPrevio" 
-                                    Content="Ejecutar Analisis Previo" 
-                                    Click="BtnAnalisisPrevio_Click" 
-                                    Background="#1565C0" Foreground="White" 
-                                    Padding="15,12" FontSize="14" FontWeight="Bold" 
-                                    Cursor="Hand" Width="240" Margin="0,0,15,0"
-                                    Style="{StaticResource BotonLimpioStyle}"/>
-                            
-                            <!-- BOTON DE GENERAR -->
-                            <Button x:Name="BtnGenerarTodos" 
-                                    Content="Generar Todos los Horarios" 
-                                    Click="BtnGenerarTodos_Click" 
-                                    Background="#2E7D32" Foreground="White" 
-                                    Padding="15,12" FontSize="14" FontWeight="Bold" 
-                                    Cursor="Hand" Width="240"
-                                    Style="{StaticResource BotonLimpioStyle}"/>
-                        </StackPanel>
+    <!-- BOTON DE ANALISIS -->
+    <Button x:Name="BtnAnalisisPrevio" 
+            Click="BtnAnalisisPrevio_Click" 
+            Background="#1976D2" Foreground="White" 
+            Padding="0" Cursor="Hand" Width="240" Height="48" Margin="10,0"
+            Style="{StaticResource BotonAccionStyle}">
+        <StackPanel Orientation="Horizontal" VerticalAlignment="Center" HorizontalAlignment="Center">
+            <TextBlock FontFamily="Segoe MDL2 Assets" Text="&#xE8A3;" FontSize="18" Margin="0,0,10,0" VerticalAlignment="Center"/>
+            <TextBlock Text="Ejecutar Analisis Previo" FontSize="14" FontWeight="Bold" VerticalAlignment="Center"/>
+        </StackPanel>
+    </Button>
+
+    <!-- BOTON DE GENERAR -->
+    <Button x:Name="BtnGenerarTodos" 
+            Click="BtnGenerarTodos_Click" 
+            Background="#2E7D32" Foreground="White" 
+            Padding="0" Cursor="Hand" Width="240" Height="48" Margin="10,0"
+            Style="{StaticResource BotonAccionStyle}">
+        <StackPanel Orientation="Horizontal" VerticalAlignment="Center" HorizontalAlignment="Center">
+            <TextBlock FontFamily="Segoe MDL2 Assets" Text="&#xE943;" FontSize="18" Margin="0,0,10,0" VerticalAlignment="Center"/>
+            <TextBlock Text="Generar Horarios" FontSize="14" FontWeight="Bold" VerticalAlignment="Center"/>
+        </StackPanel>
+    </Button>
+    
+    <!-- BOTON DE ASIGNAR SALONES -->
+    <Button x:Name="BtnAsignarSalones" 
+            Click="BtnAsignarSalones_Click" 
+            Background="#F57C00" Foreground="White" 
+            Padding="0" Cursor="Hand" Width="240" Height="48" Margin="10,0"
+            Style="{StaticResource BotonAccionStyle}">
+        <StackPanel Orientation="Horizontal" VerticalAlignment="Center" HorizontalAlignment="Center">
+            <TextBlock FontFamily="Segoe MDL2 Assets" Text="&#xE825;" FontSize="18" Margin="0,0,10,0" VerticalAlignment="Center"/>
+            <TextBlock Text="Asignar Salones" FontSize="14" FontWeight="Bold" VerticalAlignment="Center"/>
+        </StackPanel>
+    </Button>
+</StackPanel>
                         
                         <ProgressBar x:Name="BarraProgreso" Minimum="0" Maximum="100" Height="15" Margin="0,20,0,0" Visibility="Collapsed" Foreground="#2E7D32" Background="#E0E0E0" BorderThickness="0"/>
                         <TextBlock x:Name="TxtProgreso" Text="Calculando..." Visibility="Collapsed" HorizontalAlignment="Center" Margin="0,5,0,0" FontSize="13" FontWeight="SemiBold" Foreground="#2E7D32"/>
@@ -102,18 +142,17 @@
 
                 <TextBlock Text="Selecciona una carrera para visualizar su horario" FontSize="20" FontWeight="Bold" Foreground="{StaticResource negroTitulos}" HorizontalAlignment="Center" Margin="0,0,0,20"/>
 
-                <Grid x:Name="GridCarreras" Margin="0,0,0,20">
-                    <Grid.ColumnDefinitions>
-                        <ColumnDefinition/>
-                        <ColumnDefinition/>
-                        <ColumnDefinition/>
-                        <ColumnDefinition/>
-                    </Grid.ColumnDefinitions>
-                </Grid>
+                <Grid x:Name="GridCarreras" Margin="0,0,0,20" HorizontalAlignment="Center">
+    <Grid.ColumnDefinitions>
+        <ColumnDefinition/>
+        <ColumnDefinition/>
+        <ColumnDefinition/>
+    </Grid.ColumnDefinitions>
+</Grid>
             </StackPanel>
         </ScrollViewer>
 
-        <!-- MODAL DE DIAGNOSTICO FLOTANTE VERSION AMPLIA CON NAVEGACION -->
+        <!-- MODAL DE DIAGNOSTICO FLOTANTE -->
         <Grid x:Name="ModalDiagnostico" Visibility="Collapsed" Background="#99000000" Panel.ZIndex="100">
             <Border Background="White" CornerRadius="12" Margin="40" Padding="0" VerticalAlignment="Center" HorizontalAlignment="Center" MaxWidth="1200" MaxHeight="750" Width="1100">
                 <Border.Effect>
@@ -129,8 +168,8 @@
                         <Grid>
                             <Grid.ColumnDefinitions>
                                 <ColumnDefinition Width="*"/>
-                                <ColumnDefinition Width="Auto"/> <!-- Botones Navegacion -->
-                                <ColumnDefinition Width="Auto"/> <!-- Cerrar -->
+                                <ColumnDefinition Width="Auto"/>
+                                <ColumnDefinition Width="Auto"/>
                             </Grid.ColumnDefinitions>
                             
                             <StackPanel Grid.Column="0">

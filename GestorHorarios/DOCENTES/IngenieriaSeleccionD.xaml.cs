@@ -165,11 +165,12 @@ namespace GestorHorarios.DOCENTES
             var nombre = TextboxNombre.Text.Trim();
             var tipoDocente = (ComboBoxTipoTiempo.SelectedItem as ComboBoxItem)?.Content?.ToString() ?? "TIEMPO COMPLETO";
             int horasMaximas = int.TryParse(TextboxHorasMaximas.Text, out int hm) ? hm : 20;
+            // Capturamos el HFG con fallback a 0 como acordamos
+            int horasFrenteGrupo = int.TryParse(TextboxHFG.Text, out int hfg) ? hfg : 0;
 
             // Obtener id_carrera principal seleccionada
             int idCarreraPrincipal = _idCarrera;
-            if (ComboBoxCarreraPrincipal.SelectedItem is ComboBoxItem cbItem
-                && cbItem.Tag is int idTag)
+            if (ComboBoxCarreraPrincipal.SelectedItem is ComboBoxItem cbItem && cbItem.Tag is int idTag)
                 idCarreraPrincipal = idTag;
 
             // Obtener ids de carreras secundarias marcadas
@@ -180,8 +181,7 @@ namespace GestorHorarios.DOCENTES
                     idCarrerasSecundarias.Add(idSec);
             }
 
-            // Obtener disponibilidad del Canvas (bloques por dia)
-            // Mapeamos índice de hora a id_bloque cargado de BD
+            // Obtener disponibilidad del Canvas
             var disponibilidad = ObtenerDisponibilidadSeleccionada();
 
             using var conn = new SqlConnection(DatabaseService.GetConnectionString());
@@ -190,8 +190,8 @@ namespace GestorHorarios.DOCENTES
 
             try
             {
-                // 1. Insertar Docente
-                int idDocente = InsertarDocente(conn, transaction, nombre, tipoDocente, horasMaximas);
+                // 1. Insertar Docente (Ahora le pasamos horasFrenteGrupo)
+                int idDocente = InsertarDocente(conn, transaction, nombre, tipoDocente, horasMaximas, horasFrenteGrupo);
 
                 // 2. Insertar carrera principal
                 InsertarDocenteCarrera(conn, transaction, idDocente, idCarreraPrincipal, esPrincipal: true);
@@ -218,16 +218,17 @@ namespace GestorHorarios.DOCENTES
         }
 
         private static int InsertarDocente(SqlConnection conn, SqlTransaction tx,
-            string nombre, string tipoDocente, int horasMaximas)
+            string nombre, string tipoDocente, int horasMaximas, int horasFrenteGrupo)
         {
             using var cmd = new SqlCommand(@"
-                INSERT INTO Docentes (nombre, tipo_docente, id_estado, horas_maximas)
-                VALUES (@nombre, @tipo, 1, @horas);
+                INSERT INTO Docentes (nombre, tipo_docente, id_estado, horas_maximas, horas_frente_grupo)
+                VALUES (@nombre, @tipo, 1, @horas, @hfg);
                 SELECT SCOPE_IDENTITY();", conn, tx);
 
             cmd.Parameters.AddWithValue("@nombre", nombre);
             cmd.Parameters.AddWithValue("@tipo", tipoDocente);
             cmd.Parameters.AddWithValue("@horas", horasMaximas);
+            cmd.Parameters.AddWithValue("@hfg", horasFrenteGrupo);
 
             return Convert.ToInt32(cmd.ExecuteScalar());
         }
@@ -333,6 +334,7 @@ namespace GestorHorarios.DOCENTES
             // Datos básicos
             TextboxNombre.Text = docente.NombreCompleto;
             TextboxHorasMaximas.Text = docente.HorasMaximas.ToString();
+            TextboxHFG.Text = docente.HorasFrenteGrupo.ToString();
 
             foreach (ComboBoxItem cbItem in ComboBoxTipoTiempo.Items)
                 if (cbItem.Content?.ToString() == docente.TipoTiempo)
@@ -468,6 +470,24 @@ namespace GestorHorarios.DOCENTES
                     $"Debes asignar exactamente {hm}h en el horario. " +
                     $"Actualmente tienes {_horasAsignadas}h asignadas. " +
                     $"Completa el horario o reduce las horas máximas a {_horasAsignadas}.");
+                return false;
+            }
+
+            if (!int.TryParse(TextboxHFG.Text, out int hfg) || hfg < 0)
+            {
+                MostrarAdvertencia("Por favor, ingrese un número válido para las Horas Frente a Grupo (HFG).");
+                return false;
+            }
+
+            if (hfg > hm)
+            {
+                MostrarAdvertencia("Las Horas Frente a Grupo no pueden ser mayores a las horas máximas del contrato.");
+                return false;
+            }
+
+            if (_horasAsignadas < hfg)
+            {
+                MostrarAdvertencia($"Has marcado {_horasAsignadas}h de disponibilidad en el calendario, pero el maestro tiene {hfg}h Frente a Grupo. Debes pintar al menos {hfg}h disponibles.");
                 return false;
             }
 
@@ -1147,6 +1167,15 @@ namespace GestorHorarios.DOCENTES
 
                 while (reader.Read())
                 {
+                    // Lectura segura para la nueva variable HFG
+                    int hfg = 0;
+                    try
+                    {
+                        if (reader["horas_frente_grupo"] != DBNull.Value)
+                            hfg = Convert.ToInt32(reader["horas_frente_grupo"]);
+                    }
+                    catch { /* La columna no existe en el reader, se queda en 0 */ }
+
                     var docente = new Docente
                     {
                         IdDocente = Convert.ToInt32(reader["id_docente"]),
@@ -1158,6 +1187,10 @@ namespace GestorHorarios.DOCENTES
                         HorarioLaboral = reader["HorarioLaboral"] as string ?? string.Empty,
                         HorasMaximas = reader["HorasMaximas"] != DBNull.Value
                             ? Convert.ToInt32(reader["HorasMaximas"]) : 0,
+
+                        // ASIGNACIÓN DE LA NUEVA VARIABLE
+                        HorasFrenteGrupo = hfg,
+
                         HorasAsignadas = reader["HorasAsignadas"] != DBNull.Value
                             ? Convert.ToInt32(reader["HorasAsignadas"]) : 0,
                         IdCarreraPrincipal = reader["IdCarreraPrincipal"] != DBNull.Value
@@ -1176,7 +1209,6 @@ namespace GestorHorarios.DOCENTES
                 MostrarMensajeError($"Error al cargar docentes: {ex.Message}");
             }
         }
-
         private void MostrarMensajeSinDatos()
         {
             ListaDocentes.Children.Add(new TextBlock
@@ -1294,11 +1326,17 @@ namespace GestorHorarios.DOCENTES
                 header.Children.Add(CrearBadge(docente.TipoTiempo, "#1976D2"));
             stack.Children.Add(header);
 
-            // Badges horas: máximas + asignadas
+            // Badges horas: máximas + asignadas + HFG (¡NUEVO!)
             var filaHoras = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 0, 0, 8) };
+
             filaHoras.Children.Add(CrearBadge($"Máx: {docente.HorasMaximas}h", "#455A64"));
+
             var colorAsignadas = docente.HorasAsignadas > docente.HorasMaximas ? "#C62828" : "#2E7D32";
             filaHoras.Children.Add(CrearBadge($"Asignadas: {docente.HorasAsignadas}h", colorAsignadas));
+
+            // Aquí agregamos el Badge de HFG en color Azul Claro
+            filaHoras.Children.Add(CrearBadge($"HFG: {docente.HorasFrenteGrupo}h", "#0288D1"));
+
             stack.Children.Add(filaHoras);
 
             // Carreras
@@ -1336,6 +1374,7 @@ namespace GestorHorarios.DOCENTES
         }
 
         // "Lunes 7:30-8:30, Lunes 8:30-9:30, Martes 9:30-11:30" → tabla visual agrupada por día
+        // "Lunes 7:30-8:30, Martes 9:30-11:30" → tabla visual agrupada por día
         private static Border CrearTablaHorario(string horarioLaboral)
         {
             var sp = new StackPanel { Margin = new Thickness(0, 4, 0, 0) };
@@ -1355,13 +1394,17 @@ namespace GestorHorarios.DOCENTES
                 var t = bloque.Trim();
                 var espacio = t.IndexOf(' ');
                 if (espacio < 0) continue;
+
                 var dia = t[..espacio];
                 var rango = t[(espacio + 1)..];
+
+                // Ya no forzamos nada, lo guardamos exactamente como viene de la Base de Datos
                 if (!porDia.ContainsKey(dia)) porDia[dia] = new List<string>();
                 porDia[dia].Add(rango);
             }
 
-            var diasOrden = new[] { "Lunes", "Martes", "Miércoles", "Jueves", "Viernes" };
+            // BUSCAMOS DIRECTAMENTE "Miercoles" SIN ACENTO PARA QUE HAGA MATCH CON LA BD
+            var diasOrden = new[] { "Lunes", "Martes", "Miercoles", "Jueves", "Viernes" };
             var coloresDia = new[] { "#FFE0B2", "#C8E6C9", "#BBDEFB", "#F8BBD0", "#FFE0B2" };
 
             foreach (var dia in diasOrden)
@@ -1387,9 +1430,12 @@ namespace GestorHorarios.DOCENTES
                 rowGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
                 rowGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
 
+                // Al mostrarlo en pantalla le ponemos el acento para que la interfaz se vea profesional
+                string nombreVisual = dia == "Miercoles" ? "Miércoles" : dia;
+
                 rowGrid.Children.Add(new TextBlock
                 {
-                    Text = dia,
+                    Text = nombreVisual,
                     FontSize = 12,
                     FontWeight = FontWeights.Bold,
                     Foreground = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#333333")),
@@ -1592,6 +1638,8 @@ namespace GestorHorarios.DOCENTES
             var nombre = TextboxNombre.Text.Trim();
             var tipoDocente = (ComboBoxTipoTiempo.SelectedItem as ComboBoxItem)?.Content?.ToString() ?? "TIEMPO COMPLETO";
             int horasMaximas = int.TryParse(TextboxHorasMaximas.Text, out int hm) ? hm : 20;
+            // Capturamos el HFG
+            int horasFrenteGrupo = int.TryParse(TextboxHFG.Text, out int hfg) ? hfg : 0;
 
             int idCarreraPrincipal = _idCarrera;
             if (ComboBoxCarreraPrincipal.SelectedItem is ComboBoxItem cbItem && cbItem.Tag is int idTag)
@@ -1609,15 +1657,16 @@ namespace GestorHorarios.DOCENTES
             using var tx = conn.BeginTransaction();
             try
             {
-                // Actualizar datos b\u00e1sicos
+                // Actualizar datos básicos (Agregamos horas_frente_grupo)
                 using (var cmd = new SqlCommand(@"
                     UPDATE Docentes
-                    SET nombre=@nombre, tipo_docente=@tipo, horas_maximas=@horas
+                    SET nombre=@nombre, tipo_docente=@tipo, horas_maximas=@horas, horas_frente_grupo=@hfg
                     WHERE id_docente=@id", conn, tx))
                 {
                     cmd.Parameters.AddWithValue("@nombre", nombre);
                     cmd.Parameters.AddWithValue("@tipo", tipoDocente);
                     cmd.Parameters.AddWithValue("@horas", horasMaximas);
+                    cmd.Parameters.AddWithValue("@hfg", horasFrenteGrupo);
                     cmd.Parameters.AddWithValue("@id", idDocente);
                     cmd.ExecuteNonQuery();
                 }
@@ -1661,6 +1710,7 @@ namespace GestorHorarios.DOCENTES
         {
             TextboxNombre.Clear();
             TextboxHorasMaximas.Text = "20";
+            TextboxHFG.Text = "0";
             ComboBoxCarreraPrincipal.SelectedIndex = -1;
             ComboBoxTipoTiempo.SelectedIndex = 0;
             _horasAsignadas = 0;

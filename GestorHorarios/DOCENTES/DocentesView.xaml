@@ -1,12 +1,10 @@
 <UserControl x:Class="GestorHorarios.DOCENTES.DocentesView"
-             
              xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
-             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"            
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
              xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
              mc:Ignorable="d"
              d:DesignHeight="700" d:DesignWidth="1000"
-             
              Background="{StaticResource ColorWhitesmoke}">
 
     <UserControl.Resources>
@@ -26,9 +24,10 @@
 
     <ScrollViewer VerticalScrollBarVisibility="Auto">
         <StackPanel Margin="40,30" MaxWidth="1200" HorizontalAlignment="Center">
+            
             <Grid Margin="0,0,0,30">
                 <StackPanel VerticalAlignment="Center">
-                    <TextBlock Text="Gesti&#243;n de Docentes"
+                    <TextBlock Text="Gestion de Docentes"
                                FontSize="32"
                                FontWeight="Bold"
                                Foreground="{StaticResource GuindaBajo}"/>
@@ -36,6 +35,41 @@
                                FontSize="16"
                                Foreground="#555555"
                                Margin="0,8,0,0"/>
+                </StackPanel>
+            </Grid>
+            
+            <Grid Width="350" HorizontalAlignment="Left" Margin="0,0,0,20">
+                <StackPanel>
+                    <TextBox x:Name="TxtBuscadorDocente"
+                             Height="35"
+                             Padding="8,5"
+                             BorderBrush="#CCCCCC"
+                             BorderThickness="1"
+                             TextChanged="TxtBuscadorDocente_TextChanged"/>
+            
+                    <Popup x:Name="PopupResultados" 
+                           IsOpen="False" 
+                           PlacementTarget="{Binding ElementName=TxtBuscadorDocente}" 
+                           StaysOpen="False"
+                           Width="350">
+                        <Border Background="White" 
+                                BorderBrush="#CCCCCC" 
+                                BorderThickness="1" 
+                                MaxHeight="600">
+                            <ListBox x:Name="ListResultadosBusqueda" 
+                                     SelectionChanged="ListResultadosBusqueda_SelectionChanged"
+                                     BorderThickness="0">
+                                <ListBox.ItemTemplate>
+                                    <DataTemplate>
+                                        <StackPanel Margin="5">
+                                            <TextBlock Text="{Binding NombreCompleto}" FontWeight="Bold" Foreground="#7A003C"/>
+                                            <TextBlock Text="{Binding NombreCarreraPrincipal}" FontSize="11" Foreground="#666666"/>
+                                        </StackPanel>
+                                    </DataTemplate>
+                                </ListBox.ItemTemplate>
+                            </ListBox>
+                        </Border>
+                    </Popup>
                 </StackPanel>
             </Grid>
 
@@ -58,7 +92,6 @@
                     <ColumnDefinition/>
                 </Grid.ColumnDefinitions>
 
-                <!-- Tag = id_carrera de la BD -->
                 <Border Grid.Row="0" Grid.Column="0"
                         Style="{StaticResource CarreraCardStyle}"
                         MouseLeftButtonDown="SeleccionarCarrera_Click"
@@ -83,7 +116,7 @@
                         MouseLeftButtonDown="SeleccionarCarrera_Click"
                         Tag="2">
                     <StackPanel>
-                        <TextBlock Text="Ingenier&#237;a Civil"
+                        <TextBlock Text="Ingenieria Civil"
                                    FontSize="18" FontWeight="Bold"
                                    Foreground="{StaticResource GuindaBajo}"
                                    HorizontalAlignment="Center"
@@ -121,7 +154,7 @@
                         MouseLeftButtonDown="SeleccionarCarrera_Click"
                         Tag="4">
                     <StackPanel>
-                        <TextBlock Text="Gesti&#243;n Empresarial"
+                        <TextBlock Text="Gestion Empresarial"
                                    FontSize="18" FontWeight="Bold"
                                    Foreground="{StaticResource GuindaBajo}"
                                    HorizontalAlignment="Center"
@@ -140,7 +173,7 @@
                         MouseLeftButtonDown="SeleccionarCarrera_Click"
                         Tag="5">
                     <StackPanel>
-                        <TextBlock Text="Ingenier&#237;a Industrial"
+                        <TextBlock Text="Ingenieria Industrial"
                                    FontSize="18" FontWeight="Bold"
                                    Foreground="{StaticResource GuindaBajo}"
                                    HorizontalAlignment="Center"
@@ -159,7 +192,7 @@
                         MouseLeftButtonDown="SeleccionarCarrera_Click"
                         Tag="6">
                     <StackPanel>
-                        <TextBlock Text="Ingenier&#237;a Bioqu&#237;mica"
+                        <TextBlock Text="Ingenieria Bioquimica"
                                    FontSize="18" FontWeight="Bold"
                                    Foreground="{StaticResource GuindaBajo}"
                                    HorizontalAlignment="Center"
@@ -178,7 +211,7 @@
                         MouseLeftButtonDown="SeleccionarCarrera_Click"
                         Tag="7">
                     <StackPanel>
-                        <TextBlock Text="Ingl&#233;s"
+                        <TextBlock Text="Ingles"
                                    FontSize="18" FontWeight="Bold"
                                    Foreground="{StaticResource GuindaBajo}"
                                    HorizontalAlignment="Center"
