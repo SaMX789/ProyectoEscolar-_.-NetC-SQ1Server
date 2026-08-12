@@ -25,6 +25,8 @@ namespace GestorHorarios.Services
             public int IdSalon { get; set; }
             public int Capacidad { get; set; }
             public int? IdCarrera { get; set; }
+            public int? IdCarreraSecundaria { get; set; }
+            public int? IdCarreraTerciaria { get; set; }
             public string Nombre { get; set; } = "";
         }
 
@@ -64,8 +66,10 @@ namespace GestorHorarios.Services
                         }
                     }
 
-                    // Cargar Salones
-                    using (var cmd = new SqlCommand("SELECT id_salon, capacidad, id_carrera, nombre FROM Salones", conn))
+                    // Cargar Salones (AHORA INCLUYE CARRERA SECUNDARIA Y TERCIARIA)
+                    using (var cmd = new SqlCommand(@"
+                        SELECT id_salon, capacidad, id_carrera, id_carreraSecundaria, id_carreraTerciaria, nombre 
+                        FROM Salones", conn))
                     {
                         using var reader = cmd.ExecuteReader();
                         while (reader.Read())
@@ -75,6 +79,8 @@ namespace GestorHorarios.Services
                                 IdSalon = Convert.ToInt32(reader["id_salon"]),
                                 Capacidad = Convert.ToInt32(reader["capacidad"]),
                                 IdCarrera = reader["id_carrera"] != DBNull.Value ? Convert.ToInt32(reader["id_carrera"]) : null,
+                                IdCarreraSecundaria = reader["id_carreraSecundaria"] != DBNull.Value ? Convert.ToInt32(reader["id_carreraSecundaria"]) : null,
+                                IdCarreraTerciaria = reader["id_carreraTerciaria"] != DBNull.Value ? Convert.ToInt32(reader["id_carreraTerciaria"]) : null,
                                 Nombre = reader["nombre"].ToString() ?? ""
                             });
                         }
@@ -99,7 +105,6 @@ namespace GestorHorarios.Services
                         posiblesSalonesDeEstaClase.Add(variable);
 
                         // -- LÓGICA DE LABORATORIOS (Centros de Cómputo) --
-                        // Si la materia es técnica, forzamos a que solo use salones con 'cc' o 'lab' en el nombre
                         bool esMateriaPractica = c.NombreMateria.ToLower().Contains("programacion") ||
                                                  c.NombreMateria.ToLower().Contains("base de datos") ||
                                                  c.NombreMateria.ToLower().Contains("sistemas");
@@ -107,17 +112,27 @@ namespace GestorHorarios.Services
                         bool esLaboratorio = s.Nombre.ToLower().Contains("cc") || s.Nombre.ToLower().Contains("lab");
 
                         if (esMateriaPractica && !esLaboratorio) model.Add(variable == 0);
-                        if (!esMateriaPractica && esLaboratorio) model.Add(variable == 0); // Opcional: proteger labs de clases teóricas
+                        if (!esMateriaPractica && esLaboratorio) model.Add(variable == 0);
 
-                        // -- PREMIOS POR EDIFICIO BASE --
-                        if (s.IdCarrera.HasValue && s.IdCarrera.Value == c.IdCarreraGrupo)
+                        // -- NUEVA LÓGICA: FILTRO ESTRICTO DE CARRERAS --
+                        bool salonCompartido = !s.IdCarrera.HasValue && !s.IdCarreraSecundaria.HasValue && !s.IdCarreraTerciaria.HasValue;
+                        bool coincideCarrera = s.IdCarrera == c.IdCarreraGrupo ||
+                                               s.IdCarreraSecundaria == c.IdCarreraGrupo ||
+                                               s.IdCarreraTerciaria == c.IdCarreraGrupo;
+
+                        // Si el salón NO es compartido y NO coincide con la carrera del grupo, bloqueamos el acceso
+                        if (!salonCompartido && !coincideCarrera)
                         {
-                            // +50 puntos si Sistemas queda en el Edificio J, Civil en K, etc.
-                            objetivo.AddTerm(variable, 50);
+                            model.Add(variable == 0);
                         }
-                        else if (!s.IdCarrera.HasValue)
+                        else if (coincideCarrera)
                         {
-                            // +20 puntos si usan un edificio compartido (Comodín)
+                            // Premio fuerte si logra meterlos en un salón específico de su carrera
+                            objetivo.AddTerm(variable, 100);
+                        }
+                        else if (salonCompartido)
+                        {
+                            // Premio menor si usan un salón compartido
                             objetivo.AddTerm(variable, 20);
                         }
                     }
@@ -126,57 +141,42 @@ namespace GestorHorarios.Services
                     model.Add(LinearExpr.Sum(posiblesSalonesDeEstaClase) == 1);
                 }
 
-                // 3. RESTRICCIÓN DURA: CERO COLISIONES DE ESPACIO
+                // 3. RESTRICCIÓN DURA: CERO COLISIONES DE ESPACIO (Ningún grupo comparte salón al mismo tiempo)
                 var clasesPorMomento = clases.GroupBy(c => new { c.IdDia, c.IdBloque });
                 foreach (var momento in clasesPorMomento)
                 {
                     foreach (var s in salones)
                     {
                         var clasesAqui = momento.Select(c => varsSalon[(c.IdDetalle, s.IdSalon)]).ToList();
-                        // En este día, en este bloque, la suma de clases en este salón debe ser <= 1
                         model.Add(LinearExpr.Sum(clasesAqui) <= 1);
                     }
                 }
 
-                // 4. PENALIZACIÓN DINÁMICA POR MIGRACIÓN (El algoritmo anti-rezagados)
-                var clasesPorGrupoYDia = clases
-                    .GroupBy(c => new { c.IdGrupo, c.IdDia })
-                    .Select(g => g.OrderBy(c => c.IdBloque).ToList());
-
-                foreach (var rutaDiaria in clasesPorGrupoYDia)
+                // 4. NUEVA LÓGICA: ASIGNACIÓN DE "SALÓN BASE" (Minimizar la fragmentación)
+                var grupos = clases.Select(c => c.IdGrupo).Distinct();
+                foreach (var idGrupo in grupos)
                 {
-                    for (int i = 0; i < rutaDiaria.Count - 1; i++)
+                    var clasesDelGrupo = clases.Where(c => c.IdGrupo == idGrupo).ToList();
+
+                    foreach (var s in salones)
                     {
-                        var claseActual = rutaDiaria[i];
-                        var claseSiguiente = rutaDiaria[i + 1];
+                        // Variable booleana: ¿El grupo usa este salón al menos una vez?
+                        var grupoUsaSalon = model.NewBoolVar($"grupo_{idGrupo}_usa_salon_{s.IdSalon}");
+                        var clasesEnEsteSalon = clasesDelGrupo.Select(c => varsSalon[(c.IdDetalle, s.IdSalon)]).ToList();
 
-                        // Si las clases son bloques consecutivos
-                        if (claseSiguiente.IdBloque == claseActual.IdBloque + 1)
+                        // Si alguna clase del grupo se da en este salón, grupoUsaSalon se vuelve TRUE (1)
+                        foreach (var varClase in clasesEnEsteSalon)
                         {
-                            int penalizacion = ObtenerPenalizacionPorCambio(claseSiguiente.IdBloque);
-                            var variablesMantenimientoSalon = new List<BoolVar>();
-
-                            foreach (var s in salones)
-                            {
-                                // Esta variable mágica (ambasEnS) solo será 1 si el grupo estuvo en el salón 's' a las 8am Y a las 9am
-                                var ambasEnS = model.NewBoolVar($"ambas_{claseActual.IdDetalle}_{claseSiguiente.IdDetalle}_s{s.IdSalon}");
-
-                                model.AddBoolAnd(new[] { varsSalon[(claseActual.IdDetalle, s.IdSalon)], varsSalon[(claseSiguiente.IdDetalle, s.IdSalon)] }).OnlyEnforceIf(ambasEnS);
-                                model.AddBoolOr(new[] { varsSalon[(claseActual.IdDetalle, s.IdSalon)].Not(), varsSalon[(claseSiguiente.IdDetalle, s.IdSalon)].Not() }).OnlyEnforceIf(ambasEnS.Not());
-
-                                variablesMantenimientoSalon.Add(ambasEnS);
-                            }
-
-                            // Variable booleana final que indica si el grupo cambió de salón
-                            var cambioSalon = model.NewBoolVar($"cambio_salon_{claseActual.IdDetalle}");
-                            var seQuedoEnMismoSalon = model.NewBoolVar($"mismo_salon_{claseActual.IdDetalle}");
-
-                            model.Add(LinearExpr.Sum(variablesMantenimientoSalon) == seQuedoEnMismoSalon);
-                            model.Add(cambioSalon + seQuedoEnMismoSalon == 1);
-
-                            // Restar los puntos a la función objetivo si el solver decide hacerlos caminar a otro salón
-                            objetivo.AddTerm(cambioSalon, -penalizacion);
+                            model.AddImplication(varClase, grupoUsaSalon);
                         }
+
+                        // Castigamos fuertemente al solver por cada salón DIFERENTE que le abra a un grupo.
+                        // Esto fuerza a la IA a meter todas las clases del grupo en el MISMO salón.
+                        // (Nota: Castigamos menos a los CC/Labs para permitir que migren ahí sin romper el solver)
+                        bool esLaboratorio = s.Nombre.ToLower().Contains("cc") || s.Nombre.ToLower().Contains("lab");
+                        int castigoPorAbrirSalon = esLaboratorio ? 500 : 5000;
+
+                        objetivo.AddTerm(grupoUsaSalon, -castigoPorAbrirSalon);
                     }
                 }
 
@@ -207,7 +207,7 @@ namespace GestorHorarios.Services
                                         cmdUpdate.Parameters.AddWithValue("@idSalon", s.IdSalon);
                                         cmdUpdate.Parameters.AddWithValue("@idDetalle", c.IdDetalle);
                                         cmdUpdate.ExecuteNonQuery();
-                                        break; // Encontramos el salón asignado, pasamos a la siguiente clase
+                                        break;
                                     }
                                 }
                             }
@@ -223,23 +223,6 @@ namespace GestorHorarios.Services
                 }
                 return false;
             });
-        }
-
-        // Multiplicador de castigo matemático basado en la hora del día
-        private int ObtenerPenalizacionPorCambio(int idBloqueSiguiente)
-        {
-            // Bloques de la mañana
-            if (idBloqueSiguiente <= 2) return 5;    // Cambiar temprano (ej. 8:30) molesta poco
-            if (idBloqueSiguiente <= 4) return 20;   // Media mañana, penalización moderada
-            if (idBloqueSiguiente == 5) return 200;  // 11:30 AM (Prohibido casi por completo)
-            if (idBloqueSiguiente >= 6 && idBloqueSiguiente <= 7) return 500; // Final del matutino (Muro matemático)
-
-            // Bloques de la tarde
-            if (idBloqueSiguiente <= 9) return 5;    // Entrando a la tarde, molesta poco
-            if (idBloqueSiguiente <= 11) return 20;  // Media tarde
-            if (idBloqueSiguiente >= 12) return 500; // 6:30 PM en adelante, castigo severo
-
-            return 10;
         }
     }
 }

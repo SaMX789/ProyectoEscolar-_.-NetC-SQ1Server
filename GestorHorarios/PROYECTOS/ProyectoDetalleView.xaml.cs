@@ -307,6 +307,252 @@ namespace GestorHorarios.PROYECTOS
             }
         }
 
+        private void BtnExportarTodasCarreras_Click(object sender, RoutedEventArgs e)
+        {
+            try
+            {
+                TxtProgreso.Text = "Exportando horarios de todas las carreras...";
+                TxtProgreso.Visibility = Visibility.Visible;
+                BarraProgreso.Visibility = Visibility.Visible;
+                BarraProgreso.IsIndeterminate = true;
+
+                // --- NUEVO: CREACIÓN DE CARPETA ---
+                string rutaEscritorio = Environment.GetFolderPath(Environment.SpecialFolder.Desktop);
+                string nombreCarpeta = $"Horarios_Grupos_Ciclo{_proyecto.Ciclo}_{_proyecto.Anio}".Replace(" ", "_");
+                string rutaCarpeta = System.IO.Path.Combine(rutaEscritorio, nombreCarpeta);
+
+                if (!System.IO.Directory.Exists(rutaCarpeta))
+                {
+                    System.IO.Directory.CreateDirectory(rutaCarpeta);
+                }
+                // ----------------------------------
+
+                string tituloCiclo = $"Ciclo {_proyecto.Ciclo} · {_proyecto.Anio} · {_proyecto.Periodo}";
+                var generador = new GestorHorarios.Services.GeneradorWordService();
+                int exportadas = 0;
+
+                using var conn = new Microsoft.Data.SqlClient.SqlConnection(GestorHorarios.Services.DatabaseService.GetConnectionString());
+                conn.Open();
+
+                var carreras = new List<(int Id, string Nombre)>();
+                using (var cmdCarreras = new Microsoft.Data.SqlClient.SqlCommand("sp_ObtenerTodasLasCarreras", conn))
+                {
+                    cmdCarreras.CommandType = System.Data.CommandType.StoredProcedure;
+                    using var readerCarreras = cmdCarreras.ExecuteReader();
+                    while (readerCarreras.Read())
+                    {
+                        carreras.Add((Convert.ToInt32(readerCarreras["id_carrera"]), readerCarreras["nombre"].ToString() ?? "Carrera"));
+                    }
+                }
+
+                foreach (var carrera in carreras)
+                {
+                    var gruposData = new List<GestorHorarios.Services.GeneradorWordService.GrupoData>();
+                    var gruposLista = new List<(int IdGrupo, string Nombre, int Semestre, string Turno)>();
+
+                    using (var cmdGrupos = new Microsoft.Data.SqlClient.SqlCommand("sp_ObtenerGruposPorCicloYCarrera", conn))
+                    {
+                        cmdGrupos.CommandType = System.Data.CommandType.StoredProcedure;
+                        cmdGrupos.Parameters.AddWithValue("@ciclo", _proyecto.Ciclo);
+                        cmdGrupos.Parameters.AddWithValue("@id_carrera", carrera.Id);
+
+                        using var readerGrupos = cmdGrupos.ExecuteReader();
+                        while (readerGrupos.Read())
+                        {
+                            gruposLista.Add((
+                                Convert.ToInt32(readerGrupos["id_grupo"]),
+                                readerGrupos["NombreGrupo"].ToString() ?? "",
+                                Convert.ToInt32(readerGrupos["semestre"]),
+                                readerGrupos["turno"].ToString() ?? "Matutino"
+                            ));
+                        }
+                    }
+
+                    foreach (var grupo in gruposLista)
+                    {
+                        int totalCreditos = 0;
+
+                        using (var cmdMat = new Microsoft.Data.SqlClient.SqlCommand("SELECT SUM(creditos) FROM Materias WHERE id_carrera = @idC AND semestre = @sem AND id_estado = 1", conn))
+                        {
+                            cmdMat.Parameters.AddWithValue("@idC", carrera.Id);
+                            cmdMat.Parameters.AddWithValue("@sem", grupo.Semestre);
+                            var res = cmdMat.ExecuteScalar();
+                            if (res != DBNull.Value && res != null) totalCreditos = Convert.ToInt32(res);
+                        }
+
+                        var horariosAsignados = new List<GestorHorarios.PROYECTOS.HorarioCarreraView.HorarioAsignado>();
+                        using (var cmdHor = new Microsoft.Data.SqlClient.SqlCommand("sp_GetHorarioDelGrupo", conn))
+                        {
+                            cmdHor.CommandType = System.Data.CommandType.StoredProcedure;
+                            cmdHor.Parameters.AddWithValue("@idGrupo", grupo.IdGrupo);
+                            cmdHor.Parameters.AddWithValue("@idProyecto", _proyecto.IdProyecto);
+
+                            using var readerHor = cmdHor.ExecuteReader();
+                            while (readerHor.Read())
+                            {
+                                horariosAsignados.Add(new GestorHorarios.PROYECTOS.HorarioCarreraView.HorarioAsignado
+                                {
+                                    DiaSemana = Convert.ToInt32(readerHor["id_dia"]),
+                                    BloqueHora = Convert.ToInt32(readerHor["id_bloque"]),
+                                    NombreMateria = readerHor["Materia"].ToString() ?? "",
+                                    NombreDocente = readerHor["Docente"]?.ToString() ?? "",
+                                    NombreSalon = readerHor["Salon"]?.ToString() ?? "",
+                                    NombreEdificio = readerHor["Edificio"]?.ToString() ?? ""
+                                });
+                            }
+                        }
+
+                        gruposData.Add(new GestorHorarios.Services.GeneradorWordService.GrupoData
+                        {
+                            NombreGrupo = grupo.Nombre,
+                            Turno = grupo.Turno,
+                            TotalHoras = totalCreditos,
+                            Horarios = horariosAsignados
+                        });
+                    }
+
+                    if (gruposData.Count > 0)
+                    {
+                        string nombreArchivoLimpio = string.Join("_", carrera.Nombre.Split(System.IO.Path.GetInvalidFileNameChars()));
+                        // Guardamos DENTRO de la nueva carpeta
+                        string rutaArchivo = System.IO.Path.Combine(rutaCarpeta, $"Horarios_{nombreArchivoLimpio}.docx");
+
+                        generador.ExportarHorarioGrupos(rutaArchivo, carrera.Nombre, tituloCiclo, gruposData);
+                        exportadas++;
+                    }
+                }
+
+                BarraProgreso.Visibility = Visibility.Collapsed;
+                TxtProgreso.Visibility = Visibility.Collapsed;
+
+                MessageBox.Show($"¡Se generaron {exportadas} documentos de Word!\n\nEstán dentro de la carpeta:\n{nombreCarpeta}\nen tu Escritorio.", "Exportación Exitosa", MessageBoxButton.OK, MessageBoxImage.Information);
+            }
+            catch (Exception ex)
+            {
+                BarraProgreso.Visibility = Visibility.Collapsed;
+                TxtProgreso.Visibility = Visibility.Collapsed;
+                MessageBox.Show($"Ocurrió un error en la exportación:\n{ex.Message}", "Error", MessageBoxButton.OK, MessageBoxImage.Error);
+            }
+        }
+
+        private void BtnExportarDocentes_Click(object sender, RoutedEventArgs e)
+        {
+            try
+            {
+                TxtProgreso.Text = "Organizando y exportando docentes por carrera...";
+                TxtProgreso.Visibility = Visibility.Visible;
+                BarraProgreso.Visibility = Visibility.Visible;
+                BarraProgreso.IsIndeterminate = true;
+
+                // --- NUEVO: CREACIÓN DE CARPETA PARA DOCENTES ---
+                string rutaEscritorio = Environment.GetFolderPath(Environment.SpecialFolder.Desktop);
+                string nombreCarpeta = $"Docentes_Ciclo{_proyecto.Ciclo}_{_proyecto.Anio}".Replace(" ", "_");
+                string rutaCarpeta = System.IO.Path.Combine(rutaEscritorio, nombreCarpeta);
+
+                if (!System.IO.Directory.Exists(rutaCarpeta))
+                {
+                    System.IO.Directory.CreateDirectory(rutaCarpeta);
+                }
+                // ------------------------------------------------
+
+                string tituloCiclo = $"Ciclo {_proyecto.Ciclo} · {_proyecto.Anio} · {_proyecto.Periodo}";
+
+                using var conn = new Microsoft.Data.SqlClient.SqlConnection(GestorHorarios.Services.DatabaseService.GetConnectionString());
+                conn.Open();
+
+                // 1. Obtenemos a los docentes junto con su Carrera Principal
+                var docentesLista = new List<(int Id, string Nombre, int Hfg, string Carrera)>();
+                using (var cmdDocentes = new Microsoft.Data.SqlClient.SqlCommand("sp_GetDocentesConHorarioPorProyecto", conn))
+                {
+                    cmdDocentes.CommandType = System.Data.CommandType.StoredProcedure;
+                    cmdDocentes.Parameters.AddWithValue("@id_proyecto", _proyecto.IdProyecto);
+
+                    using var reader = cmdDocentes.ExecuteReader();
+                    while (reader.Read())
+                    {
+                        docentesLista.Add((
+                            Convert.ToInt32(reader["id_docente"]),
+                            reader["nombre"].ToString() ?? "",
+                            Convert.ToInt32(reader["horas_frente_grupo"]),
+                            reader["CarreraPrincipal"].ToString() ?? "Sin Departamento"
+                        ));
+                    }
+                }
+
+                // 2. Diccionario para agrupar los datos de los maestros por carrera
+                var docentesPorCarrera = new Dictionary<string, List<GestorHorarios.Services.GeneradorWordService.DocenteDataWord>>();
+
+                foreach (var docente in docentesLista)
+                {
+                    var horarioPersonal = new List<GestorHorarios.PROYECTOS.HorarioCarreraView.HorarioPersonal>();
+
+                    using (var cmdHorario = new Microsoft.Data.SqlClient.SqlCommand("sp_GetHorarioPersonalDocente", conn))
+                    {
+                        cmdHorario.CommandType = System.Data.CommandType.StoredProcedure;
+                        cmdHorario.Parameters.AddWithValue("@id_proyecto", _proyecto.IdProyecto);
+                        cmdHorario.Parameters.AddWithValue("@id_docente", docente.Id);
+
+                        using var readerHorario = cmdHorario.ExecuteReader();
+                        while (readerHorario.Read())
+                        {
+                            horarioPersonal.Add(new GestorHorarios.PROYECTOS.HorarioCarreraView.HorarioPersonal
+                            {
+                                Dia = Convert.ToInt32(readerHorario["id_dia"]),
+                                Bloque = Convert.ToInt32(readerHorario["id_bloque"]),
+                                Materia = readerHorario["NombreMateria"].ToString() ?? "",
+                                Grupo = readerHorario["NombreGrupo"].ToString() ?? ""
+                            });
+                        }
+                    }
+
+                    var datosMaestro = new GestorHorarios.Services.GeneradorWordService.DocenteDataWord
+                    {
+                        NombreDocente = docente.Nombre,
+                        Hfg = docente.Hfg,
+                        Horarios = horarioPersonal
+                    };
+
+                    // Agregamos al maestro a la lista de su respectiva carrera
+                    if (!docentesPorCarrera.ContainsKey(docente.Carrera))
+                    {
+                        docentesPorCarrera[docente.Carrera] = new List<GestorHorarios.Services.GeneradorWordService.DocenteDataWord>();
+                    }
+                    docentesPorCarrera[docente.Carrera].Add(datosMaestro);
+                }
+
+                // 3. Generamos UN archivo Word por cada Carrera, iterando nuestro diccionario
+                var generador = new GestorHorarios.Services.GeneradorWordService();
+                int archivosGenerados = 0;
+
+                foreach (var carreraGrupo in docentesPorCarrera)
+                {
+                    string nombreCarrera = carreraGrupo.Key;
+                    List<GestorHorarios.Services.GeneradorWordService.DocenteDataWord> listaMaestros = carreraGrupo.Value;
+
+                    if (listaMaestros.Count > 0)
+                    {
+                        string nombreArchivoLimpio = string.Join("_", nombreCarrera.Split(System.IO.Path.GetInvalidFileNameChars()));
+                        string rutaArchivo = System.IO.Path.Combine(rutaCarpeta, $"Docentes_{nombreArchivoLimpio}.docx");
+
+                        // Enviamos la lista filtrada al generador
+                        generador.ExportarHorariosDocentes(rutaArchivo, tituloCiclo, listaMaestros);
+                        archivosGenerados++;
+                    }
+                }
+
+                BarraProgreso.Visibility = Visibility.Collapsed;
+                TxtProgreso.Visibility = Visibility.Collapsed;
+
+                MessageBox.Show($"¡Se generaron {archivosGenerados} archivos de Word divididos por departamento!\n\nEstán en la carpeta:\n{nombreCarpeta}\nen tu Escritorio.", "Exportación Exitosa", MessageBoxButton.OK, MessageBoxImage.Information);
+            }
+            catch (Exception ex)
+            {
+                BarraProgreso.Visibility = Visibility.Collapsed;
+                TxtProgreso.Visibility = Visibility.Collapsed;
+                MessageBox.Show($"Ocurrió un error:\n{ex.Message}", "Error", MessageBoxButton.OK, MessageBoxImage.Error);
+            }
+        }
+
         private Border CrearTarjetaDiagnostico(string clave, string nombre, int grupos, int requeridas, int docentes, int capacidad, string semaforo, int creditos, string area)
         {
             string bgColor = "#FFFFFF";

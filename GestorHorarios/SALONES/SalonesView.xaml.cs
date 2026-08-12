@@ -12,11 +12,13 @@ namespace GestorHorarios.SALONES
     {
         private int? _idSalonEnEdicion = null;
         private readonly List<(int Id, string Nombre)> _edificios = new();
+        private readonly List<(int Id, string Nombre)> _carreras = new();
 
         public SalonesView()
         {
             InitializeComponent();
             CargarEdificios();
+            CargarCarreras();
             CargarSalones();
         }
 
@@ -49,6 +51,32 @@ namespace GestorHorarios.SALONES
             }
         }
 
+        private void CargarCarreras()
+        {
+            try
+            {
+                using var conn = new SqlConnection(DatabaseService.GetConnectionString());
+                using var cmd = new SqlCommand(
+                    "SELECT id_carrera, nombre FROM Carreras ORDER BY nombre", conn);
+                conn.Open();
+                using var reader = cmd.ExecuteReader();
+                while (reader.Read())
+                {
+                    int id = Convert.ToInt32(reader["id_carrera"]);
+                    string nombre = reader["nombre"].ToString() ?? "";
+                    _carreras.Add((id, nombre));
+
+                    ComboBoxCarrera1.Items.Add(new ComboBoxItem { Content = nombre, Tag = id });
+                    ComboBoxCarrera2.Items.Add(new ComboBoxItem { Content = nombre, Tag = id });
+                    ComboBoxCarrera3.Items.Add(new ComboBoxItem { Content = nombre, Tag = id });
+                }
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"Error cargando carreras: {ex.Message}");
+            }
+        }
+
         private void CargarSalones()
         {
             ListaSalones.Children.Clear();
@@ -66,14 +94,31 @@ namespace GestorHorarios.SALONES
                 using var reader = cmd.ExecuteReader();
                 while (reader.Read())
                 {
-                    salones.Add(new Salon
+                    var salon = new Salon
                     {
                         IdSalon = Convert.ToInt32(reader["id_salon"]),
                         Nombre = reader["NombreSalon"].ToString() ?? "",
                         Capacidad = Convert.ToInt32(reader["capacidad"]),
                         NombreEdificio = reader["NombreEdificio"].ToString() ?? "",
                         NombreCarrera = reader["NombreCarrera"].ToString() ?? ""
-                    });
+                    };
+
+                    if (reader["id_carrera"] != DBNull.Value)
+                        salon.IdCarrera = Convert.ToInt32(reader["id_carrera"]);
+
+                    if (HasColumn(reader, "id_carreraSecundaria") && reader["id_carreraSecundaria"] != DBNull.Value)
+                    {
+                        salon.IdCarreraSecundaria = Convert.ToInt32(reader["id_carreraSecundaria"]);
+                        salon.NombreCarreraSecundaria = reader["NombreCarreraSecundaria"]?.ToString() ?? "";
+                    }
+
+                    if (HasColumn(reader, "id_carreraTerciaria") && reader["id_carreraTerciaria"] != DBNull.Value)
+                    {
+                        salon.IdCarreraTerciaria = Convert.ToInt32(reader["id_carreraTerciaria"]);
+                        salon.NombreCarreraTerciaria = reader["NombreCarreraTerciaria"]?.ToString() ?? "";
+                    }
+
+                    salones.Add(salon);
                 }
 
                 if (salones.Count == 0)
@@ -89,7 +134,6 @@ namespace GestorHorarios.SALONES
                     return;
                 }
 
-                // Actualizar resumen
                 TxtTotalSalones.Text = salones.Count.ToString();
                 TxtHorasSemanales.Text = $"{salones.Count * 12 * 5:N0}h";
 
@@ -107,6 +151,16 @@ namespace GestorHorarios.SALONES
             }
         }
 
+        private bool HasColumn(SqlDataReader reader, string columnName)
+        {
+            for (int i = 0; i < reader.FieldCount; i++)
+            {
+                if (reader.GetName(i).Equals(columnName, StringComparison.InvariantCultureIgnoreCase))
+                    return true;
+            }
+            return false;
+        }
+
         // ── Creación de tarjeta ─────────────────────────────────────────
 
         private Border CrearCardSalon(Salon salon)
@@ -122,7 +176,13 @@ namespace GestorHorarios.SALONES
             grid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
             grid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
 
-            // Info salón
+            // Construir el texto con las carreras asignadas de forma dinámica
+            string carrerasTexto = salon.NombreCarrera;
+            if (!string.IsNullOrWhiteSpace(salon.NombreCarreraSecundaria))
+                carrerasTexto += $", {salon.NombreCarreraSecundaria}";
+            if (!string.IsNullOrWhiteSpace(salon.NombreCarreraTerciaria))
+                carrerasTexto += $", {salon.NombreCarreraTerciaria}";
+
             var info = new StackPanel { VerticalAlignment = VerticalAlignment.Center };
             info.Children.Add(new TextBlock
             {
@@ -133,7 +193,7 @@ namespace GestorHorarios.SALONES
             });
             info.Children.Add(new TextBlock
             {
-                Text = $"Capacidad: {salon.Capacidad} alumnos  •  Edificio: {salon.NombreEdificio}",
+                Text = $"Capacidad: {salon.Capacidad} alumnos  •  Edificio: {salon.NombreEdificio}  •  Carrera(s): {carrerasTexto}",
                 FontSize = 12,
                 Foreground = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#888888")),
                 Margin = new Thickness(0, 2, 0, 0)
@@ -141,7 +201,6 @@ namespace GestorHorarios.SALONES
             Grid.SetColumn(info, 0);
             grid.Children.Add(info);
 
-            // Botones
             var botones = new StackPanel
             {
                 Orientation = Orientation.Horizontal,
@@ -179,6 +238,26 @@ namespace GestorHorarios.SALONES
 
         // ── Eventos formulario ──────────────────────────────────────────
 
+        private void ComboBoxNumCarreras_SelectionChanged(object sender, SelectionChangedEventArgs e)
+        {
+            if (PanelCarrera2 == null || PanelCarrera3 == null) return;
+
+            if (ComboBoxNumCarreras?.SelectedItem is ComboBoxItem item && item.Tag != null)
+            {
+                int num = 1;
+                if (item.Tag is int valInt)
+                    num = valInt;
+                else if (int.TryParse(item.Tag.ToString(), out int valParsed))
+                    num = valParsed;
+
+                PanelCarrera2.Visibility = num >= 2 ? Visibility.Visible : Visibility.Collapsed;
+                PanelCarrera3.Visibility = num >= 3 ? Visibility.Visible : Visibility.Collapsed;
+
+                if (num < 2) ComboBoxCarrera2.SelectedIndex = -1;
+                if (num < 3) ComboBoxCarrera3.SelectedIndex = -1;
+            }
+        }
+
         private void AgregarSalon_Click(object sender, RoutedEventArgs e)
         {
             bool estaCerrado = PanelFormulario.Visibility == Visibility.Collapsed;
@@ -212,8 +291,29 @@ namespace GestorHorarios.SALONES
             }
 
             int? idEdificio = null;
-            if (ComboBoxEdificio.SelectedItem is ComboBoxItem cbItem && cbItem.Tag is int idEd)
+            if (ComboBoxEdificio.SelectedItem is ComboBoxItem cbEdItem && cbEdItem.Tag is int idEd)
                 idEdificio = idEd;
+
+            int? idCarrera = null;
+            if (ComboBoxCarrera1?.SelectedItem is ComboBoxItem cbCar1 && cbCar1.Tag is int idC1)
+                idCarrera = idC1;
+
+            int numCarreras = 1;
+            if (ComboBoxNumCarreras?.SelectedItem is ComboBoxItem cbNum && cbNum.Tag != null)
+            {
+                if (cbNum.Tag is int valInt)
+                    numCarreras = valInt;
+                else if (int.TryParse(cbNum.Tag.ToString(), out int valParsed))
+                    numCarreras = valParsed;
+            }
+
+            int? idCarreraSecundaria = null;
+            if (numCarreras >= 2 && ComboBoxCarrera2?.SelectedItem is ComboBoxItem cbCar2 && cbCar2.Tag is int idC2)
+                idCarreraSecundaria = idC2;
+
+            int? idCarreraTerciaria = null;
+            if (numCarreras >= 3 && ComboBoxCarrera3?.SelectedItem is ComboBoxItem cbCar3 && cbCar3.Tag is int idC3)
+                idCarreraTerciaria = idC3;
 
             try
             {
@@ -223,25 +323,37 @@ namespace GestorHorarios.SALONES
                 if (_idSalonEnEdicion == null)
                 {
                     using var cmd = new SqlCommand(
-                        "INSERT INTO Salones (nombre, capacidad, id_edificio) VALUES (@nombre, @cap, @edificio)",
+                        @"INSERT INTO Salones (nombre, capacidad, id_edificio, id_carrera, id_carreraSecundaria, id_carreraTerciaria) 
+                          VALUES (@nombre, @cap, @edificio, @carrera, @carreraSec, @carreraTer)",
                         conn);
                     cmd.Parameters.AddWithValue("@nombre", nombre);
                     cmd.Parameters.AddWithValue("@cap", capacidad);
                     cmd.Parameters.AddWithValue("@edificio", (object?)idEdificio ?? DBNull.Value);
+                    cmd.Parameters.AddWithValue("@carrera", (object?)idCarrera ?? DBNull.Value);
+                    cmd.Parameters.AddWithValue("@carreraSec", (object?)idCarreraSecundaria ?? DBNull.Value);
+                    cmd.Parameters.AddWithValue("@carreraTer", (object?)idCarreraTerciaria ?? DBNull.Value);
                     cmd.ExecuteNonQuery();
+
                     MessageBox.Show($"Salón '{nombre}' agregado correctamente.",
                         "Éxito", MessageBoxButton.OK, MessageBoxImage.Information);
                 }
                 else
                 {
                     using var cmd = new SqlCommand(
-                        "UPDATE Salones SET nombre=@nombre, capacidad=@cap, id_edificio=@edificio WHERE id_salon=@id",
+                        @"UPDATE Salones 
+                          SET nombre=@nombre, capacidad=@cap, id_edificio=@edificio, 
+                              id_carrera=@carrera, id_carreraSecundaria=@carreraSec, id_carreraTerciaria=@carreraTer 
+                          WHERE id_salon=@id",
                         conn);
                     cmd.Parameters.AddWithValue("@nombre", nombre);
                     cmd.Parameters.AddWithValue("@cap", capacidad);
                     cmd.Parameters.AddWithValue("@edificio", (object?)idEdificio ?? DBNull.Value);
+                    cmd.Parameters.AddWithValue("@carrera", (object?)idCarrera ?? DBNull.Value);
+                    cmd.Parameters.AddWithValue("@carreraSec", (object?)idCarreraSecundaria ?? DBNull.Value);
+                    cmd.Parameters.AddWithValue("@carreraTer", (object?)idCarreraTerciaria ?? DBNull.Value);
                     cmd.Parameters.AddWithValue("@id", _idSalonEnEdicion.Value);
                     cmd.ExecuteNonQuery();
+
                     MessageBox.Show($"Salón '{nombre}' actualizado correctamente.",
                         "Éxito", MessageBoxButton.OK, MessageBoxImage.Information);
                 }
@@ -279,6 +391,43 @@ namespace GestorHorarios.SALONES
             foreach (ComboBoxItem item in ComboBoxEdificio.Items)
                 if (item.Tag is int idEd && idEd == salon.IdEdificio)
                 { ComboBoxEdificio.SelectedItem = item; break; }
+
+            foreach (ComboBoxItem item in ComboBoxCarrera1.Items)
+                if (item.Tag is int idCar && idCar == salon.IdCarrera)
+                { ComboBoxCarrera1.SelectedItem = item; break; }
+
+            int totalCarreras = 1;
+            if (salon.IdCarreraTerciaria.HasValue && salon.IdCarreraTerciaria > 0)
+                totalCarreras = 3;
+            else if (salon.IdCarreraSecundaria.HasValue && salon.IdCarreraSecundaria > 0)
+                totalCarreras = 2;
+
+            foreach (ComboBoxItem item in ComboBoxNumCarreras.Items)
+            {
+                int numVal = 1;
+                if (item.Tag is int vi) numVal = vi;
+                else if (int.TryParse(item.Tag?.ToString(), out int vp)) numVal = vp;
+
+                if (numVal == totalCarreras)
+                {
+                    ComboBoxNumCarreras.SelectedItem = item;
+                    break;
+                }
+            }
+
+            if (totalCarreras >= 2 && salon.IdCarreraSecundaria.HasValue)
+            {
+                foreach (ComboBoxItem item in ComboBoxCarrera2.Items)
+                    if (item.Tag is int idCar && idCar == salon.IdCarreraSecundaria)
+                    { ComboBoxCarrera2.SelectedItem = item; break; }
+            }
+
+            if (totalCarreras >= 3 && salon.IdCarreraTerciaria.HasValue)
+            {
+                foreach (ComboBoxItem item in ComboBoxCarrera3.Items)
+                    if (item.Tag is int idCar && idCar == salon.IdCarreraTerciaria)
+                    { ComboBoxCarrera3.SelectedItem = item; break; }
+            }
 
             TituloFormulario.Text = "EDITAR SALÓN";
             BotonGuardarSalon.Content = "Actualizar";
@@ -332,6 +481,12 @@ namespace GestorHorarios.SALONES
             TextboxNombreSalon.Clear();
             TextboxCapacidad.Text = "40";
             ComboBoxEdificio.SelectedIndex = -1;
+            ComboBoxNumCarreras.SelectedIndex = 0;
+            ComboBoxCarrera1.SelectedIndex = -1;
+            ComboBoxCarrera2.SelectedIndex = -1;
+            ComboBoxCarrera3.SelectedIndex = -1;
+            if (PanelCarrera2 != null) PanelCarrera2.Visibility = Visibility.Collapsed;
+            if (PanelCarrera3 != null) PanelCarrera3.Visibility = Visibility.Collapsed;
         }
 
         private void CerrarFormulario()
