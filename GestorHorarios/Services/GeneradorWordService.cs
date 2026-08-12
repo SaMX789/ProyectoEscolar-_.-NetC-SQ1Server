@@ -94,8 +94,8 @@ namespace GestorHorarios.Services
                     table.Alignment = Alignment.center;
                     table.Design = TableDesign.TableGrid;
 
-                    table.SetColumnWidth(0, 80);
-                    for (int c = 1; c < 6; c++) table.SetColumnWidth(c, 110);
+                    table.SetColumnWidth(0, 70);
+                    for (int c = 1; c < 6; c++) table.SetColumnWidth(c, 95);
 
                     string[] encabezados = { "Hora", "Lunes", "Martes", "Miércoles", "Jueves", "Viernes" };
                     for (int c = 0; c < 6; c++)
