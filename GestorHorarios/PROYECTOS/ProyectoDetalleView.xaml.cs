@@ -1,38 +1,44 @@
-using GestorHorarios.Models;
-using GestorHorarios.Services;
-using Microsoft.Data.SqlClient;
 using System;
 using System.Collections.Generic;
-using System.Data;
 using System.Globalization;
 using System.Linq;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Media;
+using GestorHorarios.Models;
+using GestorHorarios.Repositories;
+using GestorHorarios.Services;
+using GestorHorarios.ViewModels;
 
 namespace GestorHorarios.PROYECTOS
 {
     public partial class ProyectoDetalleView : UserControl
     {
         private readonly Proyecto _proyecto;
-        private List<Carrera> _listaCarreras = new List<Carrera>();
+        private readonly ProyectoDetalleViewModel _viewModel;
+        private List<Carrera> _listaCarreras = new();
 
-        // VARIABLES GLOBALES PARA LA NAVEGACIÓN DEL MODAL
-        private List<FrameworkElement> _encabezadosAreas = new List<FrameworkElement>();
+        // VARIABLES PARA LA NAVEGACIÃ“N DEL MODAL DE DIAGNÃ“STICO
+        private readonly List<FrameworkElement> _encabezadosAreas = new();
         private int _indiceAreaActual = 0;
 
-        public ProyectoDetalleView()
+        public ProyectoDetalleView() : this(new Proyecto())
         {
-            InitializeComponent();
-            _proyecto = new Proyecto();
         }
 
-        public ProyectoDetalleView(Proyecto proyecto) : this()
+        public ProyectoDetalleView(Proyecto proyecto, ProyectoDetalleViewModel? viewModel = null)
         {
+            InitializeComponent();
             _proyecto = proyecto;
-            CargarEncabezado();
-            CargarCarreras();
+            _viewModel = viewModel ?? new ProyectoDetalleViewModel(proyecto);
+            DataContext = _viewModel;
+
+            if (_proyecto.IdProyecto > 0 || !string.IsNullOrEmpty(_proyecto.Nombre))
+            {
+                CargarEncabezado();
+                CargarCarreras();
+            }
         }
 
         private void CargarEncabezado()
@@ -57,47 +63,14 @@ namespace GestorHorarios.PROYECTOS
             }
         }
 
-        private bool TieneHorarioGenerado(int idProyecto, int idCarrera)
-        {
-            try
-            {
-                using var conn = new SqlConnection(DatabaseService.GetConnectionString());
-                using var cmd = new SqlCommand(@"
-                    SELECT COUNT(*) 
-                    FROM HorarioDetalle hd
-                    INNER JOIN Grupos g ON hd.id_grupo = g.id_grupo
-                    WHERE hd.id_proyecto = @idProyecto AND g.id_carrera = @idCarrera", conn);
-
-                cmd.Parameters.AddWithValue("@idProyecto", idProyecto);
-                cmd.Parameters.AddWithValue("@idCarrera", idCarrera);
-
-                conn.Open();
-                int count = Convert.ToInt32(cmd.ExecuteScalar());
-                return count > 0;
-            }
-            catch { return false; }
-        }
-
         private void CargarCarreras()
         {
             try
             {
-                _listaCarreras.Clear();
                 GridCarreras.Children.Clear();
                 GridCarreras.RowDefinitions.Clear();
 
-                using var conn = new SqlConnection(DatabaseService.GetConnectionString());
-                using var cmd = new SqlCommand("SELECT id_carrera, nombre FROM Carreras ORDER BY id_carrera", conn);
-                conn.Open();
-                using var reader = cmd.ExecuteReader();
-                while (reader.Read())
-                {
-                    _listaCarreras.Add(new Carrera
-                    {
-                        IdCarrera = Convert.ToInt32(reader["id_carrera"]),
-                        Nombre = reader["nombre"].ToString() ?? ""
-                    });
-                }
+                _listaCarreras = _viewModel.ObtenerCarreras();
 
                 int totalFilas = (int)Math.Ceiling(_listaCarreras.Count / 3.0);
                 for (int r = 0; r < totalFilas; r++)
@@ -111,19 +84,18 @@ namespace GestorHorarios.PROYECTOS
                     int row = i / 3;
                     int col = i % 3;
 
-                    bool estaGenerado = TieneHorarioGenerado(_proyecto.IdProyecto, carrera.IdCarrera);
+                    bool estaGenerado = _viewModel.TieneHorarioGenerado(carrera.IdCarrera);
 
-                    // --- MAGIA DE ICONOS PROFESIONALES (Segoe MDL2 Assets) ---
-                    string iconoGlyph = "\uE82D"; // Default: Un cuadrito generico
-                    string nombreUpper = carrera.Nombre.ToUpper();
+                    string iconoGlyph = "\uE82D";
+                    string nombreUpper = carrera.Nombre.ToUpperInvariant();
 
-                    if (nombreUpper.Contains("SISTEMAS")) iconoGlyph = "\uE99A"; // Monitor de PC
-                    else if (nombreUpper.Contains("CIVIL")) iconoGlyph = "\uE913"; // Edificios / Construccion
-                    else if (nombreUpper.Contains("COMUNITARIO")) iconoGlyph = "\uE716"; // Grupo de personas
-                    else if (nombreUpper.Contains("EMPRESARIAL")) iconoGlyph = "\uE9D9"; // Maletin de negocios
-                    else if (nombreUpper.Contains("INDUSTRIAL")) iconoGlyph = "\uE713"; // Engrane
-                    else if (nombreUpper.Contains("BIOQUIMICA")) iconoGlyph = "\uE913"; // Matraz de laboratorio (Ciencia)
-                    else if (nombreUpper.Contains("INGLES") || nombreUpper.Contains("IDIOMA")) iconoGlyph = "\uE90A"; // Globo terraqueo
+                    if (nombreUpper.Contains("SISTEMAS")) iconoGlyph = "\uE99A";
+                    else if (nombreUpper.Contains("CIVIL")) iconoGlyph = "\uE913";
+                    else if (nombreUpper.Contains("COMUNITARIO")) iconoGlyph = "\uE716";
+                    else if (nombreUpper.Contains("EMPRESARIAL")) iconoGlyph = "\uE9D9";
+                    else if (nombreUpper.Contains("INDUSTRIAL")) iconoGlyph = "\uE713";
+                    else if (nombreUpper.Contains("BIOQUIMICA")) iconoGlyph = "\uE913";
+                    else if (nombreUpper.Contains("INGLES") || nombreUpper.Contains("IDIOMA")) iconoGlyph = "\uE90A";
 
                     var border = new Border
                     {
@@ -135,21 +107,36 @@ namespace GestorHorarios.PROYECTOS
                     var mainGrid = new Grid();
                     var sp = new StackPanel { HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center };
 
-                    // AQUI APLICAMOS LA FUENTE DE ICONOS DE WINDOWS
                     sp.Children.Add(new TextBlock
                     {
                         Text = iconoGlyph,
-                        FontFamily = new FontFamily("Segoe MDL2 Assets"), // Fuente nativa de iconos
+                        FontFamily = new FontFamily("Segoe MDL2 Assets"),
                         FontSize = 42,
-                        Foreground = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#757575")), // Gris elegante
+                        Foreground = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#757575")),
                         HorizontalAlignment = HorizontalAlignment.Center,
                         Margin = new Thickness(0, 0, 0, 12)
                     });
 
-                    sp.Children.Add(new TextBlock { Text = carrera.Nombre, FontSize = 16, FontWeight = FontWeights.Bold, Foreground = (Brush)FindResource("GuindaBajo"), HorizontalAlignment = HorizontalAlignment.Center, TextAlignment = TextAlignment.Center, TextWrapping = TextWrapping.Wrap });
+                    sp.Children.Add(new TextBlock
+                    {
+                        Text = carrera.Nombre,
+                        FontSize = 16,
+                        FontWeight = FontWeights.Bold,
+                        Foreground = (Brush)FindResource("GuindaBajo"),
+                        HorizontalAlignment = HorizontalAlignment.Center,
+                        TextAlignment = TextAlignment.Center,
+                        TextWrapping = TextWrapping.Wrap
+                    });
 
-                    int totalGrupos = ContarGruposCiclo(carrera.IdCarrera);
-                    sp.Children.Add(new TextBlock { Text = $"{totalGrupos} {(totalGrupos == 1 ? "grupo" : "grupos")}", FontSize = 12, Foreground = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#888888")), HorizontalAlignment = HorizontalAlignment.Center, Margin = new Thickness(0, 4, 0, 0) });
+                    int totalGrupos = _viewModel.ContarGruposCiclo(carrera.IdCarrera);
+                    sp.Children.Add(new TextBlock
+                    {
+                        Text = $"{totalGrupos} {(totalGrupos == 1 ? "grupo" : "grupos")}",
+                        FontSize = 12,
+                        Foreground = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#888888")),
+                        HorizontalAlignment = HorizontalAlignment.Center,
+                        Margin = new Thickness(0, 4, 0, 0)
+                    });
 
                     var statusIcon = new TextBlock
                     {
@@ -177,37 +164,6 @@ namespace GestorHorarios.PROYECTOS
             }
         }
 
-        private int ContarGruposCiclo(int idCarrera)
-        {
-            try
-            {
-                using var conn = new SqlConnection(DatabaseService.GetConnectionString());
-                string filtro = _proyecto.Ciclo == "B" ? "g.semestre % 2 = 1" : "g.semestre % 2 = 0";
-                using var cmd = new SqlCommand($"SELECT COUNT(*) FROM Grupos g WHERE g.id_carrera = @id AND {filtro}", conn);
-                cmd.Parameters.AddWithValue("@id", idCarrera);
-                conn.Open();
-                return Convert.ToInt32(cmd.ExecuteScalar());
-            }
-            catch { return 0; }
-        }
-
-        // ==========================================
-        // LÓGICA DEL ANÁLISIS PREVIO (DIAGNÓSTICO)
-        // ==========================================
-
-        private class DiagnosticoItem
-        {
-            public string Clave { get; set; } = "";
-            public string Nombre { get; set; } = "";
-            public int Grupos { get; set; }
-            public int Requeridas { get; set; }
-            public int Docentes { get; set; }
-            public int Capacidad { get; set; }
-            public string Semaforo { get; set; } = "";
-            public int Creditos { get; set; }
-            public string Area { get; set; } = "";
-        }
-
         private void BtnAnalisisPrevio_Click(object sender, RoutedEventArgs e)
         {
             PanelResultadosDiagnostico.Children.Clear();
@@ -216,39 +172,13 @@ namespace GestorHorarios.PROYECTOS
 
             try
             {
-                using var conn = new SqlConnection(DatabaseService.GetConnectionString());
-                using var cmd = new SqlCommand("sp_DiagnosticoViabilidad", conn)
-                {
-                    CommandType = CommandType.StoredProcedure
-                };
-                cmd.Parameters.AddWithValue("@Ciclo", _proyecto.Ciclo);
+                var carrerasCobertura = _viewModel.ObtenerDiagnosticoCobertura();
 
-                conn.Open();
-                using var reader = cmd.ExecuteReader();
-
-                var listaResultados = new List<DiagnosticoItem>();
-
-                while (reader.Read())
-                {
-                    listaResultados.Add(new DiagnosticoItem
-                    {
-                        Clave = reader["ClaveMateria"].ToString()!,
-                        Nombre = reader["NombreMateria"].ToString()!,
-                        Grupos = Convert.ToInt32(reader["Grupos"]),
-                        Requeridas = Convert.ToInt32(reader["HorasRequeridas"]),
-                        Docentes = Convert.ToInt32(reader["DocentesHabilitados"]),
-                        Capacidad = Convert.ToInt32(reader["CapacidadHoras"]),
-                        Semaforo = reader["Semaforo"].ToString()!,
-                        Creditos = Convert.ToInt32(reader["Creditos"]),
-                        Area = reader["AreaAcademica"].ToString()!
-                    });
-                }
-
-                if (listaResultados.Count == 0)
+                if (carrerasCobertura.Count == 0)
                 {
                     PanelResultadosDiagnostico.Children.Add(new TextBlock
                     {
-                        Text = "No hay datos suficientes para analizar. Asegurate de tener grupos creados para este ciclo.",
+                        Text = "No hay grupos creados para este ciclo. Crea los grupos primero.",
                         FontStyle = FontStyles.Italic,
                         Foreground = Brushes.Gray,
                         Margin = new Thickness(10)
@@ -257,57 +187,177 @@ namespace GestorHorarios.PROYECTOS
                     return;
                 }
 
-                var gruposPorArea = listaResultados
-                    .GroupBy(x => x.Area)
-                    .OrderBy(g => g.Key == "Materias Compartidas (Tronco Común)" ? 0 : 1)
-                    .ThenBy(g => g.Key);
-
-                foreach (var grupoArea in gruposPorArea)
+                foreach (var carrera in carrerasCobertura)
                 {
-                    // 1. ENCABEZADO
-                    var headerArea = new Border
+                    var containerCarrera = new StackPanel
                     {
-                        BorderBrush = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#E0E0E0")),
-                        BorderThickness = new Thickness(0, 0, 0, 2),
-                        Margin = new Thickness(0, 20, 0, 15),
-                        Padding = new Thickness(0, 0, 0, 5),
-                        Child = new TextBlock
+                        Visibility = _encabezadosAreas.Count == 0 ? Visibility.Visible : Visibility.Collapsed
+                    };
+
+                    var headerStack = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 0, 0, 15) };
+                    bool faltanMaestros = carrera.TotalFaltantes > 0;
+
+                    headerStack.Children.Add(new TextBlock
+                    {
+                        Text = faltanMaestros ? "\uE783" : "\uE73E",
+                        FontFamily = new FontFamily("Segoe MDL2 Assets"),
+                        FontSize = 20,
+                        Foreground = new SolidColorBrush((Color)ColorConverter.ConvertFromString(faltanMaestros ? "#D32F2F" : "#2E7D32")),
+                        VerticalAlignment = VerticalAlignment.Center,
+                        Margin = new Thickness(0, 0, 10, 0)
+                    });
+
+                    headerStack.Children.Add(new TextBlock
+                    {
+                        Text = $"{carrera.NombreCarrera.ToUpperInvariant()} â€” {(faltanMaestros ? $"Faltan {carrera.TotalFaltantes} asignaciones" : "Cobertura Completa")}",
+                        FontSize = 18,
+                        FontWeight = FontWeights.ExtraBold,
+                        Foreground = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#1565C0")),
+                        VerticalAlignment = VerticalAlignment.Center
+                    });
+
+                    containerCarrera.Children.Add(headerStack);
+
+                    var gruposPorSemestre = carrera.Grupos.GroupBy(g => g.Semestre).OrderBy(g => g.Key);
+                    foreach (var semestre in gruposPorSemestre)
+                    {
+                        containerCarrera.Children.Add(new TextBlock
                         {
-                            Text = grupoArea.Key.ToUpper(),
-                            FontSize = 18,
-                            FontWeight = FontWeights.ExtraBold,
-                            Foreground = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#1565C0"))
+                            Text = $"Semestre {semestre.Key}",
+                            FontSize = 14,
+                            FontWeight = FontWeights.SemiBold,
+                            Foreground = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#666666")),
+                            Margin = new Thickness(0, 10, 0, 5)
+                        });
+
+                        foreach (var grupo in semestre.OrderBy(g => g.NombreGrupo))
+                        {
+                            containerCarrera.Children.Add(CrearTarjetaGrupoCobertura(grupo));
                         }
-                    };
-
-                    PanelResultadosDiagnostico.Children.Add(headerArea);
-                    _encabezadosAreas.Add(headerArea); // Lo guardamos para la navegación
-
-                    // 2. CUADRICULA
-                    var gridTarjetas = new System.Windows.Controls.Primitives.UniformGrid
-                    {
-                        Columns = 2,
-                        VerticalAlignment = VerticalAlignment.Top
-                    };
-
-                    foreach (var item in grupoArea)
-                    {
-                        var card = CrearTarjetaDiagnostico(item.Clave, item.Nombre, item.Grupos, item.Requeridas, item.Docentes, item.Capacidad, item.Semaforo, item.Creditos, item.Area);
-                        gridTarjetas.Children.Add(card);
                     }
 
-                    PanelResultadosDiagnostico.Children.Add(gridTarjetas);
+                    PanelResultadosDiagnostico.Children.Add(containerCarrera);
+                    _encabezadosAreas.Add(containerCarrera);
                 }
 
                 ModalDiagnostico.Visibility = Visibility.Visible;
             }
             catch (Exception ex)
             {
-                MessageBox.Show($"Error al generar el diagnostico: {ex.Message}", "Error de BD", MessageBoxButton.OK, MessageBoxImage.Error);
+                MessageBox.Show($"Error al generar el diagnÃ³stico: {ex.Message}", "Error de BD", MessageBoxButton.OK, MessageBoxImage.Error);
             }
         }
 
-        private void BtnExportarTodasCarreras_Click(object sender, RoutedEventArgs e)
+        private Border CrearTarjetaGrupoCobertura(GrupoCoberturaDto grupo)
+        {
+            var borderPrincipal = new Border
+            {
+                Background = Brushes.White,
+                BorderBrush = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#E0E0E0")),
+                BorderThickness = new Thickness(1),
+                CornerRadius = new CornerRadius(8),
+                Margin = new Thickness(0, 5, 0, 10),
+                Padding = new Thickness(0),
+                Effect = new System.Windows.Media.Effects.DropShadowEffect
+                {
+                    Color = Colors.Black,
+                    Opacity = 0.05,
+                    BlurRadius = 5,
+                    ShadowDepth = 1,
+                    Direction = 270
+                }
+            };
+
+            var mainStack = new StackPanel();
+
+            var headerBorder = new Border
+            {
+                Background = Brushes.Transparent,
+                Padding = new Thickness(15, 12, 15, 12),
+                Cursor = Cursors.Hand
+            };
+
+            var gridHeader = new Grid();
+            gridHeader.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+            gridHeader.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+
+            gridHeader.Children.Add(new TextBlock
+            {
+                Text = grupo.NombreGrupo,
+                FontSize = 16,
+                FontWeight = FontWeights.Bold,
+                Foreground = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#333333")),
+                VerticalAlignment = VerticalAlignment.Center
+            });
+
+            var tbEstatus = new TextBlock
+            {
+                Text = grupo.Faltantes > 0 ? grupo.Faltantes.ToString() : "\uE73E",
+                FontFamily = grupo.Faltantes > 0 ? new FontFamily("Segoe UI") : new FontFamily("Segoe MDL2 Assets"),
+                FontSize = 20,
+                FontWeight = FontWeights.Bold,
+                Foreground = new SolidColorBrush((Color)ColorConverter.ConvertFromString(grupo.Faltantes > 0 ? "#D32F2F" : "#2E7D32")),
+                VerticalAlignment = VerticalAlignment.Center
+            };
+            Grid.SetColumn(tbEstatus, 1);
+            gridHeader.Children.Add(tbEstatus);
+            headerBorder.Child = gridHeader;
+            mainStack.Children.Add(headerBorder);
+
+            var contentBorder = new Border
+            {
+                Background = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#F9F9F9")),
+                BorderBrush = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#EEEEEE")),
+                BorderThickness = new Thickness(0, 1, 0, 0),
+                Padding = new Thickness(15, 10, 15, 10),
+                Visibility = Visibility.Collapsed
+            };
+
+            var stackMaterias = new StackPanel();
+            foreach (var materia in grupo.Materias.OrderBy(m => m.NombreMateria))
+            {
+                var gridMateria = new Grid { Margin = new Thickness(0, 0, 0, 8) };
+                gridMateria.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+                gridMateria.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+
+                gridMateria.Children.Add(new TextBlock
+                {
+                    Text = materia.NombreMateria,
+                    FontSize = 13,
+                    Foreground = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#424242")),
+                    TextWrapping = TextWrapping.Wrap,
+                    Margin = new Thickness(0, 0, 10, 0)
+                });
+
+                var tbMaestro = new TextBlock
+                {
+                    Text = materia.EstaAsignado ? materia.DocenteAsignado : "Sin Asignar",
+                    FontSize = 13,
+                    FontWeight = materia.EstaAsignado ? FontWeights.SemiBold : FontWeights.Bold,
+                    Foreground = new SolidColorBrush((Color)ColorConverter.ConvertFromString(materia.EstaAsignado ? "#1565C0" : "#D32F2F")),
+                    TextAlignment = TextAlignment.Right
+                };
+                Grid.SetColumn(tbMaestro, 1);
+                gridMateria.Children.Add(tbMaestro);
+
+                stackMaterias.Children.Add(gridMateria);
+            }
+
+            contentBorder.Child = stackMaterias;
+            mainStack.Children.Add(contentBorder);
+
+            headerBorder.MouseLeftButtonDown += (s, ev) =>
+            {
+                contentBorder.Visibility = contentBorder.Visibility == Visibility.Visible
+                    ? Visibility.Collapsed
+                    : Visibility.Visible;
+            };
+
+            borderPrincipal.Child = mainStack;
+            return borderPrincipal;
+        }
+
+        private async void BtnExportarTodasCarreras_Click(object sender, RoutedEventArgs e)
         {
             try
             {
@@ -316,126 +366,25 @@ namespace GestorHorarios.PROYECTOS
                 BarraProgreso.Visibility = Visibility.Visible;
                 BarraProgreso.IsIndeterminate = true;
 
-                // --- NUEVO: CREACIÓN DE CARPETA ---
-                string rutaEscritorio = Environment.GetFolderPath(Environment.SpecialFolder.Desktop);
-                string nombreCarpeta = $"Horarios_Grupos_Ciclo{_proyecto.Ciclo}_{_proyecto.Anio}".Replace(" ", "_");
-                string rutaCarpeta = System.IO.Path.Combine(rutaEscritorio, nombreCarpeta);
+                var (exportadas, nombreCarpeta) = await _viewModel.ExportarTodasCarrerasWordAsync();
 
-                if (!System.IO.Directory.Exists(rutaCarpeta))
-                {
-                    System.IO.Directory.CreateDirectory(rutaCarpeta);
-                }
-                // ----------------------------------
-
-                string tituloCiclo = $"Ciclo {_proyecto.Ciclo} · {_proyecto.Anio} · {_proyecto.Periodo}";
-                var generador = new GestorHorarios.Services.GeneradorWordService();
-                int exportadas = 0;
-
-                using var conn = new Microsoft.Data.SqlClient.SqlConnection(GestorHorarios.Services.DatabaseService.GetConnectionString());
-                conn.Open();
-
-                var carreras = new List<(int Id, string Nombre)>();
-                using (var cmdCarreras = new Microsoft.Data.SqlClient.SqlCommand("sp_ObtenerTodasLasCarreras", conn))
-                {
-                    cmdCarreras.CommandType = System.Data.CommandType.StoredProcedure;
-                    using var readerCarreras = cmdCarreras.ExecuteReader();
-                    while (readerCarreras.Read())
-                    {
-                        carreras.Add((Convert.ToInt32(readerCarreras["id_carrera"]), readerCarreras["nombre"].ToString() ?? "Carrera"));
-                    }
-                }
-
-                foreach (var carrera in carreras)
-                {
-                    var gruposData = new List<GestorHorarios.Services.GeneradorWordService.GrupoData>();
-                    var gruposLista = new List<(int IdGrupo, string Nombre, int Semestre, string Turno)>();
-
-                    using (var cmdGrupos = new Microsoft.Data.SqlClient.SqlCommand("sp_ObtenerGruposPorCicloYCarrera", conn))
-                    {
-                        cmdGrupos.CommandType = System.Data.CommandType.StoredProcedure;
-                        cmdGrupos.Parameters.AddWithValue("@ciclo", _proyecto.Ciclo);
-                        cmdGrupos.Parameters.AddWithValue("@id_carrera", carrera.Id);
-
-                        using var readerGrupos = cmdGrupos.ExecuteReader();
-                        while (readerGrupos.Read())
-                        {
-                            gruposLista.Add((
-                                Convert.ToInt32(readerGrupos["id_grupo"]),
-                                readerGrupos["NombreGrupo"].ToString() ?? "",
-                                Convert.ToInt32(readerGrupos["semestre"]),
-                                readerGrupos["turno"].ToString() ?? "Matutino"
-                            ));
-                        }
-                    }
-
-                    foreach (var grupo in gruposLista)
-                    {
-                        int totalCreditos = 0;
-
-                        using (var cmdMat = new Microsoft.Data.SqlClient.SqlCommand("SELECT SUM(creditos) FROM Materias WHERE id_carrera = @idC AND semestre = @sem AND id_estado = 1", conn))
-                        {
-                            cmdMat.Parameters.AddWithValue("@idC", carrera.Id);
-                            cmdMat.Parameters.AddWithValue("@sem", grupo.Semestre);
-                            var res = cmdMat.ExecuteScalar();
-                            if (res != DBNull.Value && res != null) totalCreditos = Convert.ToInt32(res);
-                        }
-
-                        var horariosAsignados = new List<GestorHorarios.PROYECTOS.HorarioCarreraView.HorarioAsignado>();
-                        using (var cmdHor = new Microsoft.Data.SqlClient.SqlCommand("sp_GetHorarioDelGrupo", conn))
-                        {
-                            cmdHor.CommandType = System.Data.CommandType.StoredProcedure;
-                            cmdHor.Parameters.AddWithValue("@idGrupo", grupo.IdGrupo);
-                            cmdHor.Parameters.AddWithValue("@idProyecto", _proyecto.IdProyecto);
-
-                            using var readerHor = cmdHor.ExecuteReader();
-                            while (readerHor.Read())
-                            {
-                                horariosAsignados.Add(new GestorHorarios.PROYECTOS.HorarioCarreraView.HorarioAsignado
-                                {
-                                    DiaSemana = Convert.ToInt32(readerHor["id_dia"]),
-                                    BloqueHora = Convert.ToInt32(readerHor["id_bloque"]),
-                                    NombreMateria = readerHor["Materia"].ToString() ?? "",
-                                    NombreDocente = readerHor["Docente"]?.ToString() ?? "",
-                                    NombreSalon = readerHor["Salon"]?.ToString() ?? "",
-                                    NombreEdificio = readerHor["Edificio"]?.ToString() ?? ""
-                                });
-                            }
-                        }
-
-                        gruposData.Add(new GestorHorarios.Services.GeneradorWordService.GrupoData
-                        {
-                            NombreGrupo = grupo.Nombre,
-                            Turno = grupo.Turno,
-                            TotalHoras = totalCreditos,
-                            Horarios = horariosAsignados
-                        });
-                    }
-
-                    if (gruposData.Count > 0)
-                    {
-                        string nombreArchivoLimpio = string.Join("_", carrera.Nombre.Split(System.IO.Path.GetInvalidFileNameChars()));
-                        // Guardamos DENTRO de la nueva carpeta
-                        string rutaArchivo = System.IO.Path.Combine(rutaCarpeta, $"Horarios_{nombreArchivoLimpio}.docx");
-
-                        generador.ExportarHorarioGrupos(rutaArchivo, carrera.Nombre, tituloCiclo, gruposData);
-                        exportadas++;
-                    }
-                }
-
-                BarraProgreso.Visibility = Visibility.Collapsed;
-                TxtProgreso.Visibility = Visibility.Collapsed;
-
-                MessageBox.Show($"¡Se generaron {exportadas} documentos de Word!\n\nEstán dentro de la carpeta:\n{nombreCarpeta}\nen tu Escritorio.", "Exportación Exitosa", MessageBoxButton.OK, MessageBoxImage.Information);
+                MessageBox.Show(
+                    $"Â¡Se generaron {exportadas} documentos de Word!\n\nEstÃ¡n dentro de la carpeta:\n{nombreCarpeta}\nen tu Escritorio.",
+                    "ExportaciÃ³n Exitosa", MessageBoxButton.OK, MessageBoxImage.Information);
             }
             catch (Exception ex)
             {
+                MessageBox.Show($"OcurriÃ³ un error en la exportaciÃ³n:\n{ex.Message}", "Error", MessageBoxButton.OK, MessageBoxImage.Error);
+            }
+            finally
+            {
+                BarraProgreso.IsIndeterminate = false;
                 BarraProgreso.Visibility = Visibility.Collapsed;
                 TxtProgreso.Visibility = Visibility.Collapsed;
-                MessageBox.Show($"Ocurrió un error en la exportación:\n{ex.Message}", "Error", MessageBoxButton.OK, MessageBoxImage.Error);
             }
         }
 
-        private void BtnExportarDocentes_Click(object sender, RoutedEventArgs e)
+        private async void BtnExportarDocentes_Click(object sender, RoutedEventArgs e)
         {
             try
             {
@@ -444,224 +393,28 @@ namespace GestorHorarios.PROYECTOS
                 BarraProgreso.Visibility = Visibility.Visible;
                 BarraProgreso.IsIndeterminate = true;
 
-                // --- NUEVO: CREACIÓN DE CARPETA PARA DOCENTES ---
-                string rutaEscritorio = Environment.GetFolderPath(Environment.SpecialFolder.Desktop);
-                string nombreCarpeta = $"Docentes_Ciclo{_proyecto.Ciclo}_{_proyecto.Anio}".Replace(" ", "_");
-                string rutaCarpeta = System.IO.Path.Combine(rutaEscritorio, nombreCarpeta);
+                var (archivosGenerados, nombreCarpeta) = await _viewModel.ExportarDocentesWordAsync();
 
-                if (!System.IO.Directory.Exists(rutaCarpeta))
-                {
-                    System.IO.Directory.CreateDirectory(rutaCarpeta);
-                }
-                // ------------------------------------------------
-
-                string tituloCiclo = $"Ciclo {_proyecto.Ciclo} · {_proyecto.Anio} · {_proyecto.Periodo}";
-
-                using var conn = new Microsoft.Data.SqlClient.SqlConnection(GestorHorarios.Services.DatabaseService.GetConnectionString());
-                conn.Open();
-
-                // 1. Obtenemos a los docentes junto con su Carrera Principal
-                var docentesLista = new List<(int Id, string Nombre, int Hfg, string Carrera)>();
-                using (var cmdDocentes = new Microsoft.Data.SqlClient.SqlCommand("sp_GetDocentesConHorarioPorProyecto", conn))
-                {
-                    cmdDocentes.CommandType = System.Data.CommandType.StoredProcedure;
-                    cmdDocentes.Parameters.AddWithValue("@id_proyecto", _proyecto.IdProyecto);
-
-                    using var reader = cmdDocentes.ExecuteReader();
-                    while (reader.Read())
-                    {
-                        docentesLista.Add((
-                            Convert.ToInt32(reader["id_docente"]),
-                            reader["nombre"].ToString() ?? "",
-                            Convert.ToInt32(reader["horas_frente_grupo"]),
-                            reader["CarreraPrincipal"].ToString() ?? "Sin Departamento"
-                        ));
-                    }
-                }
-
-                // 2. Diccionario para agrupar los datos de los maestros por carrera
-                var docentesPorCarrera = new Dictionary<string, List<GestorHorarios.Services.GeneradorWordService.DocenteDataWord>>();
-
-                foreach (var docente in docentesLista)
-                {
-                    var horarioPersonal = new List<GestorHorarios.PROYECTOS.HorarioCarreraView.HorarioPersonal>();
-
-                    using (var cmdHorario = new Microsoft.Data.SqlClient.SqlCommand("sp_GetHorarioPersonalDocente", conn))
-                    {
-                        cmdHorario.CommandType = System.Data.CommandType.StoredProcedure;
-                        cmdHorario.Parameters.AddWithValue("@id_proyecto", _proyecto.IdProyecto);
-                        cmdHorario.Parameters.AddWithValue("@id_docente", docente.Id);
-
-                        using var readerHorario = cmdHorario.ExecuteReader();
-                        while (readerHorario.Read())
-                        {
-                            horarioPersonal.Add(new GestorHorarios.PROYECTOS.HorarioCarreraView.HorarioPersonal
-                            {
-                                Dia = Convert.ToInt32(readerHorario["id_dia"]),
-                                Bloque = Convert.ToInt32(readerHorario["id_bloque"]),
-                                Materia = readerHorario["NombreMateria"].ToString() ?? "",
-                                Grupo = readerHorario["NombreGrupo"].ToString() ?? ""
-                            });
-                        }
-                    }
-
-                    var datosMaestro = new GestorHorarios.Services.GeneradorWordService.DocenteDataWord
-                    {
-                        NombreDocente = docente.Nombre,
-                        Hfg = docente.Hfg,
-                        Horarios = horarioPersonal
-                    };
-
-                    // Agregamos al maestro a la lista de su respectiva carrera
-                    if (!docentesPorCarrera.ContainsKey(docente.Carrera))
-                    {
-                        docentesPorCarrera[docente.Carrera] = new List<GestorHorarios.Services.GeneradorWordService.DocenteDataWord>();
-                    }
-                    docentesPorCarrera[docente.Carrera].Add(datosMaestro);
-                }
-
-                // 3. Generamos UN archivo Word por cada Carrera, iterando nuestro diccionario
-                var generador = new GestorHorarios.Services.GeneradorWordService();
-                int archivosGenerados = 0;
-
-                foreach (var carreraGrupo in docentesPorCarrera)
-                {
-                    string nombreCarrera = carreraGrupo.Key;
-                    List<GestorHorarios.Services.GeneradorWordService.DocenteDataWord> listaMaestros = carreraGrupo.Value;
-
-                    if (listaMaestros.Count > 0)
-                    {
-                        string nombreArchivoLimpio = string.Join("_", nombreCarrera.Split(System.IO.Path.GetInvalidFileNameChars()));
-                        string rutaArchivo = System.IO.Path.Combine(rutaCarpeta, $"Docentes_{nombreArchivoLimpio}.docx");
-
-                        // Enviamos la lista filtrada al generador
-                        generador.ExportarHorariosDocentes(rutaArchivo, tituloCiclo, listaMaestros);
-                        archivosGenerados++;
-                    }
-                }
-
-                BarraProgreso.Visibility = Visibility.Collapsed;
-                TxtProgreso.Visibility = Visibility.Collapsed;
-
-                MessageBox.Show($"¡Se generaron {archivosGenerados} archivos de Word divididos por departamento!\n\nEstán en la carpeta:\n{nombreCarpeta}\nen tu Escritorio.", "Exportación Exitosa", MessageBoxButton.OK, MessageBoxImage.Information);
+                MessageBox.Show(
+                    $"Â¡Se generaron {archivosGenerados} archivos de Word divididos por departamento!\n\nEstÃ¡n en la carpeta:\n{nombreCarpeta}\nen tu Escritorio.",
+                    "ExportaciÃ³n Exitosa", MessageBoxButton.OK, MessageBoxImage.Information);
             }
             catch (Exception ex)
             {
+                MessageBox.Show($"OcurriÃ³ un error:\n{ex.Message}", "Error", MessageBoxButton.OK, MessageBoxImage.Error);
+            }
+            finally
+            {
+                BarraProgreso.IsIndeterminate = false;
                 BarraProgreso.Visibility = Visibility.Collapsed;
                 TxtProgreso.Visibility = Visibility.Collapsed;
-                MessageBox.Show($"Ocurrió un error:\n{ex.Message}", "Error", MessageBoxButton.OK, MessageBoxImage.Error);
             }
-        }
-
-        private Border CrearTarjetaDiagnostico(string clave, string nombre, int grupos, int requeridas, int docentes, int capacidad, string semaforo, int creditos, string area)
-        {
-            string bgColor = "#FFFFFF";
-            string borderColor = "#CCCCCC";
-            string textColor = "#333333";
-            string estatus = "";
-            string consejo = "";
-
-            if (semaforo == "Rojo")
-            {
-                bgColor = "#FFEBEE";
-                borderColor = "#D32F2F";
-                textColor = "#C62828";
-                estatus = "CRITICO: Faltan horas";
-
-                int faltantes = requeridas - capacidad;
-                int gruposFaltantes = (int)Math.Ceiling((double)faltantes / (creditos == 0 ? 1 : creditos));
-
-                consejo = $"CONSEJO: Te faltan cubrir {faltantes} horas (aprox. {gruposFaltantes} grupos). El algoritmo dejara bloques vacios si no intervienes. " +
-                          $"Necesitas habilitar/contratar urgentemente maestros de '{area}'.";
-            }
-            else if (semaforo == "Amarillo")
-            {
-                bgColor = "#FFFDE7";
-                borderColor = "#FBC02D";
-                textColor = "#F57F17";
-                estatus = "AL LIMITE";
-
-                consejo = $"CONSEJO: Tienes las horas exactas, pero dependes de {docentes} maestro(s) para cubrir {grupos} grupos. " +
-                          $"Existe riesgo de cuello de botella si se empalman horarios. Considera habilitar a otro docente de '{area}'.";
-            }
-            else
-            {
-                bgColor = "#E8F5E9";
-                borderColor = "#388E3C";
-                textColor = "#2E7D32";
-                estatus = "OPTIMO";
-
-                consejo = $"CONSEJO: Capacidad holgada. Puedes asignar esto a 1 maestro a tiempo completo ({requeridas} hrs), " +
-                          $"o distribuirlo entre {grupos} maestros ({creditos} hrs c/u) del area de '{area}'.";
-            }
-
-            var border = new Border
-            {
-                Background = new SolidColorBrush((Color)ColorConverter.ConvertFromString(bgColor)),
-                BorderBrush = new SolidColorBrush((Color)ColorConverter.ConvertFromString(borderColor)),
-                BorderThickness = new Thickness(4, 1, 1, 1),
-                CornerRadius = new CornerRadius(6),
-                Padding = new Thickness(15),
-                Margin = new Thickness(5, 5, 15, 15),
-                VerticalAlignment = VerticalAlignment.Top
-            };
-
-            var mainStack = new StackPanel();
-
-            var gridTop = new Grid();
-            gridTop.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
-            gridTop.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
-
-            var infoStack = new StackPanel();
-            infoStack.Children.Add(new TextBlock { Text = $"[{clave}] {nombre}", FontSize = 15, FontWeight = FontWeights.Bold, Foreground = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#333333")), Margin = new Thickness(0, 0, 0, 6), TextWrapping = TextWrapping.Wrap });
-            infoStack.Children.Add(new TextBlock { Text = $"Demanda: {requeridas} horas (Para {grupos} grupos de {creditos} creditos)", FontSize = 13, Foreground = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#555555")), TextWrapping = TextWrapping.Wrap });
-            infoStack.Children.Add(new TextBlock { Text = $"Capacidad: {capacidad} horas (De {docentes} docentes)", FontSize = 13, FontWeight = FontWeights.SemiBold, Foreground = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#555555")), TextWrapping = TextWrapping.Wrap });
-
-            Grid.SetColumn(infoStack, 0);
-            gridTop.Children.Add(infoStack);
-
-            var txtEstatus = new TextBlock
-            {
-                Text = estatus,
-                FontSize = 13,
-                FontWeight = FontWeights.Bold,
-                Foreground = new SolidColorBrush((Color)ColorConverter.ConvertFromString(textColor)),
-                VerticalAlignment = VerticalAlignment.Top,
-                Margin = new Thickness(10, 0, 0, 0)
-            };
-            Grid.SetColumn(txtEstatus, 1);
-            gridTop.Children.Add(txtEstatus);
-
-            mainStack.Children.Add(gridTop);
-
-            var borderConsejo = new Border
-            {
-                Background = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#F5F5F5")),
-                CornerRadius = new CornerRadius(4),
-                Padding = new Thickness(12),
-                Margin = new Thickness(0, 12, 0, 0)
-            };
-
-            var txtConsejo = new TextBlock
-            {
-                Text = consejo,
-                FontSize = 13,
-                FontStyle = FontStyles.Italic,
-                Foreground = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#424242")),
-                TextWrapping = TextWrapping.Wrap
-            };
-
-            borderConsejo.Child = txtConsejo;
-            mainStack.Children.Add(borderConsejo);
-
-            border.Child = mainStack;
-            return border;
         }
 
         private async void BtnAsignarSalones_Click(object sender, RoutedEventArgs e)
         {
             var result = MessageBox.Show(
-                "Este proceso asignará salones a los horarios ya generados, minimizando los cambios de aula.\n\n¿Deseas continuar?",
+                "Este proceso asignarÃ¡ salones a los horarios ya generados, minimizando los cambios de aula.\n\nÂ¿Deseas continuar?",
                 "Asignar Salones", MessageBoxButton.YesNo, MessageBoxImage.Information);
 
             if (result != MessageBoxResult.Yes) return;
@@ -672,25 +425,24 @@ namespace GestorHorarios.PROYECTOS
             BarraProgreso.Visibility = Visibility.Visible;
             TxtProgreso.Visibility = Visibility.Visible;
             BarraProgreso.IsIndeterminate = true;
-            TxtProgreso.Text = "Calculando la distribución óptima de salones...";
+            TxtProgreso.Text = "Calculando la distribuciÃ³n Ã³ptima de salones...";
 
             try
             {
-                var asignador = new AsignadorSalonesService();
-                bool exito = await asignador.EjecutarAsignacionSalonesAsync(_proyecto.IdProyecto);
+                bool exito = await _viewModel.AsignarSalonesAsync();
 
                 if (exito)
                 {
-                    MessageBox.Show("¡Los salones han sido asignados exitosamente!", "Éxito", MessageBoxButton.OK, MessageBoxImage.Information);
+                    MessageBox.Show("Â¡Los salones han sido asignados exitosamente!", "Ã‰xito", MessageBoxButton.OK, MessageBoxImage.Information);
                 }
                 else
                 {
-                    MessageBox.Show("No se encontró una distribución viable. Revisa si hay más clases simultáneas que salones.", "Advertencia", MessageBoxButton.OK, MessageBoxImage.Warning);
+                    MessageBox.Show("No se encontrÃ³ una distribuciÃ³n viable. Revisa si hay mÃ¡s clases simultÃ¡neas que salones.", "Advertencia", MessageBoxButton.OK, MessageBoxImage.Warning);
                 }
             }
             catch (Exception ex)
             {
-                MessageBox.Show($"Ocurrió un error al asignar: {ex.Message}", "Error", MessageBoxButton.OK, MessageBoxImage.Error);
+                MessageBox.Show($"OcurriÃ³ un error al asignar: {ex.Message}", "Error", MessageBoxButton.OK, MessageBoxImage.Error);
             }
             finally
             {
@@ -708,38 +460,28 @@ namespace GestorHorarios.PROYECTOS
             ModalDiagnostico.Visibility = Visibility.Collapsed;
         }
 
-        // ==========================================
-        // NAVEGACIÓN DEL MODAL
-        // ==========================================
         private void BtnAreaAnterior_Click(object sender, RoutedEventArgs e)
         {
-            if (_encabezadosAreas.Count == 0) return;
+            if (_encabezadosAreas.Count == 0 || _indiceAreaActual <= 0) return;
 
-            if (_indiceAreaActual > 0)
-            {
-                _indiceAreaActual--;
-                _encabezadosAreas[_indiceAreaActual].BringIntoView();
-            }
+            _encabezadosAreas[_indiceAreaActual].Visibility = Visibility.Collapsed;
+            _indiceAreaActual--;
+            _encabezadosAreas[_indiceAreaActual].Visibility = Visibility.Visible;
         }
 
         private void BtnAreaSiguiente_Click(object sender, RoutedEventArgs e)
         {
-            if (_encabezadosAreas.Count == 0) return;
+            if (_encabezadosAreas.Count == 0 || _indiceAreaActual >= _encabezadosAreas.Count - 1) return;
 
-            if (_indiceAreaActual < _encabezadosAreas.Count - 1)
-            {
-                _indiceAreaActual++;
-                _encabezadosAreas[_indiceAreaActual].BringIntoView();
-            }
+            _encabezadosAreas[_indiceAreaActual].Visibility = Visibility.Collapsed;
+            _indiceAreaActual++;
+            _encabezadosAreas[_indiceAreaActual].Visibility = Visibility.Visible;
         }
 
-        // ==========================================
-        // LÓGICA DE GENERACIÓN
-        // ==========================================
         private async void BtnGenerarTodos_Click(object sender, RoutedEventArgs e)
         {
             var result = MessageBox.Show(
-                "Este proceso borrara los horarios actuales y generara nuevos para TODAS las carreras.\n\n¿Deseas continuar?",
+                "Este proceso borrara los horarios actuales y generara nuevos para TODAS las carreras.\n\nÂ¿Deseas continuar?",
                 "Generar Horarios Globales", MessageBoxButton.YesNo, MessageBoxImage.Warning);
 
             if (result != MessageBoxResult.Yes) return;
@@ -761,8 +503,7 @@ namespace GestorHorarios.PROYECTOS
                 {
                     TxtProgreso.Text = $"Calculando {carrera.Nombre}... ({completadas}/{total})";
 
-                    var generador = new GeneradorHorariosService();
-                    string resultado = await generador.EjecutarDiagnosticoAsync(_proyecto.IdProyecto, carrera.IdCarrera);
+                    string resultado = await _viewModel.GenerarHorarioCarreraAsync(carrera.IdCarrera);
 
                     if (resultado.StartsWith("EXITO"))
                     {
@@ -774,12 +515,13 @@ namespace GestorHorarios.PROYECTOS
                     }
 
                     completadas++;
-                    BarraProgreso.Value = (completadas * 100) / total;
+                    if (total > 0)
+                        BarraProgreso.Value = (completadas * 100) / total;
                 }
 
                 if (string.IsNullOrEmpty(reporteErrores))
                 {
-                    MessageBox.Show($"¡Todos los horarios han sido generados exitosamente!\n\nSe procesaron {exitos} carreras.", "Exito Total", MessageBoxButton.OK, MessageBoxImage.Information);
+                    MessageBox.Show($"Â¡Todos los horarios han sido generados exitosamente!\n\nSe procesaron {exitos} carreras.", "Exito Total", MessageBoxButton.OK, MessageBoxImage.Information);
                 }
                 else
                 {
@@ -805,7 +547,7 @@ namespace GestorHorarios.PROYECTOS
         {
             if (sender is Border border && border.Tag is int idCarrera)
             {
-                bool estaGenerado = TieneHorarioGenerado(_proyecto.IdProyecto, idCarrera);
+                bool estaGenerado = _viewModel.TieneHorarioGenerado(idCarrera);
 
                 if (estaGenerado)
                 {
@@ -813,8 +555,9 @@ namespace GestorHorarios.PROYECTOS
                 }
                 else
                 {
-                    MessageBox.Show("Aun no hay un horario calculado para esta carrera.\n\nPor favor, haz clic en el boton verde de arriba 'Generar Todos los Horarios'.",
-                                    "Horario Pendiente", MessageBoxButton.OK, MessageBoxImage.Information);
+                    MessageBox.Show(
+                        "Aun no hay un horario calculado para esta carrera.\n\nPor favor, haz clic en el boton verde de arriba 'Generar Todos los Horarios'.",
+                        "Horario Pendiente", MessageBoxButton.OK, MessageBoxImage.Information);
                 }
             }
         }

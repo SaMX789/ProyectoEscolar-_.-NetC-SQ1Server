@@ -10,7 +10,7 @@ namespace GestorHorarios.Services
 
             if (string.IsNullOrEmpty(connString))
                 throw new InvalidOperationException(
-                    "La cadena de conexiÛn 'DefaultConnection' no est· configurada en App.config.");
+                    "La cadena de conexi√≥n 'DefaultConnection' no est√° configurada en App.config.");
 
             return connString;
         }

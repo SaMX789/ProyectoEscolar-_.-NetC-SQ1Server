@@ -16,5 +16,7 @@ namespace GestorHorarios.Models
 
         public int? IdCarreraTerciaria { get; set; }
         public string NombreCarreraTerciaria { get; set; } = string.Empty;
+
+        public bool EsLaboratorio { get; set; }
     }
 }

@@ -1,28 +1,21 @@
-using GestorHorarios.Services;
-using Microsoft.Data.SqlClient;
 using System;
 using System.Collections.Generic;
-using System.Data;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
+using GestorHorarios.Repositories;
+using GestorHorarios.Services;
 
 namespace GestorHorarios.DOCENTES
 {
-    // Modelo ligero exclusivo para el buscador
-    public class DocenteBusquedaDto
-    {
-        public int IdDocente { get; set; }
-        public string NombreCompleto { get; set; } = string.Empty;
-        public int IdCarreraPrincipal { get; set; }
-        public string NombreCarreraPrincipal { get; set; } = string.Empty;
-    }
-
     public partial class DocentesView : UserControl
     {
-        public DocentesView()
+        private readonly IDocenteRepository _docenteRepository;
+
+        public DocentesView(IDocenteRepository? docenteRepository = null)
         {
             InitializeComponent();
+            _docenteRepository = docenteRepository ?? new DocenteRepository();
             CargarConteoDocentes();
         }
 
@@ -30,37 +23,23 @@ namespace GestorHorarios.DOCENTES
         {
             try
             {
-                // Los TextBlocks están en orden id_carrera 1..7
-                TextBlock[] bloques = {
+                TextBlock[] bloques =
+                {
                     TxtDocentesSistemas, TxtDocentesCivil, TxtDocentesComunitario,
                     TxtDocentesEmpresarial, TxtDocentesIndustrial,
                     TxtDocentesBioquimica, TxtDocentesIngles
                 };
 
-                using var conn = new SqlConnection(DatabaseService.GetConnectionString());
-                using var cmd = new SqlCommand("sp_ContarDocentesPorCarrera", conn)
+                var conteos = _docenteRepository.ContarPorCarrera();
+
+                for (int i = 0; i < conteos.Count && i < bloques.Length; i++)
                 {
-                    CommandType = CommandType.StoredProcedure
-                };
-
-                conn.Open();
-                using var reader = cmd.ExecuteReader();
-
-                int i = 0;
-                while (reader.Read() && i < bloques.Length)
-                {
-                    int total = Convert.ToInt32(reader["TotalDocentes"]);
-
-                    // MODIFICACIÓN AQUÍ: Se eliminó la concatenación de la palabra "Docente/s"
-                    bloques[i].Text = total.ToString();
-
-                    i++;
+                    bloques[i].Text = conteos[i].ToString();
                 }
             }
             catch (Exception ex)
             {
-                // Mostrar el error en pantalla para saber exactamente qué está fallando en SQL
-                MessageBox.Show($"Ocurrió un error al cargar los datos:\n\n{ex.Message}",
+                MessageBox.Show($"OcurriÃ³ un error al cargar los datos:\n\n{ex.Message}",
                                 "Error de Base de Datos",
                                 MessageBoxButton.OK,
                                 MessageBoxImage.Error);
@@ -78,49 +57,28 @@ namespace GestorHorarios.DOCENTES
             }
         }
 
-        #region Lógica del Buscador de Docentes
+        #region LÃ³gica del Buscador de Docentes
         private void TxtBuscadorDocente_TextChanged(object sender, TextChangedEventArgs e)
         {
             string filtro = TxtBuscadorDocente.Text.Trim();
 
-            // Solo buscamos si el usuario ha escrito al menos 2 letras
             if (filtro.Length < 2)
             {
                 PopupResultados.IsOpen = false;
                 return;
             }
 
-            var resultados = new List<DocenteBusquedaDto>();
-
+            List<DocenteBusquedaGlobalDto> resultados;
             try
             {
-                using var conn = new SqlConnection(DatabaseService.GetConnectionString());
-                using var cmd = new SqlCommand("sp_BuscarDocentesGlobal", conn)
-                {
-                    CommandType = CommandType.StoredProcedure
-                };
-                cmd.Parameters.AddWithValue("@filtro", filtro);
-                conn.Open();
-
-                using var reader = cmd.ExecuteReader();
-                while (reader.Read())
-                {
-                    resultados.Add(new DocenteBusquedaDto
-                    {
-                        IdDocente = reader.GetInt32(0),
-                        NombreCompleto = reader.GetString(1),
-                        // Lectura segura manejando posibles nulos si un maestro no tiene carrera principal
-                        IdCarreraPrincipal = reader["IdCarreraPrincipal"] != DBNull.Value ? reader.GetInt32(4) : 0,
-                        NombreCarreraPrincipal = reader["NombreCarreraPrincipal"] != DBNull.Value ? reader.GetString(5) : "Sin carrera principal"
-                    });
-                }
+                resultados = _docenteRepository.BuscarGlobal(filtro);
             }
             catch (Exception ex)
             {
                 System.Diagnostics.Debug.WriteLine($"Error en buscador: {ex.Message}");
+                resultados = new List<DocenteBusquedaGlobalDto>();
             }
 
-            // Mostrar u ocultar el Popup dependiendo de si hubo resultados
             if (resultados.Count > 0)
             {
                 ListResultadosBusqueda.ItemsSource = resultados;
@@ -134,9 +92,8 @@ namespace GestorHorarios.DOCENTES
 
         private void ListResultadosBusqueda_SelectionChanged(object sender, SelectionChangedEventArgs e)
         {
-            if (ListResultadosBusqueda.SelectedItem is not DocenteBusquedaDto seleccionado) return;
+            if (ListResultadosBusqueda.SelectedItem is not DocenteBusquedaGlobalDto seleccionado) return;
 
-            // Cerramos el popup y limpiamos el texto
             PopupResultados.IsOpen = false;
             TxtBuscadorDocente.Clear();
 
@@ -147,7 +104,6 @@ namespace GestorHorarios.DOCENTES
                 return;
             }
 
-            // Navegamos a la vista de la carrera específica del docente
             var navService = NavigationService.GetFromWindow(this);
             if (navService != null)
             {

@@ -1,33 +1,33 @@
-﻿using GestorHorarios.Models;
-using GestorHorarios.Services;
-using Microsoft.Data.SqlClient;
 using System;
 using System.Collections.Generic;
-using System.Data;
 using System.Linq;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Media;
+using GestorHorarios.Models;
+using GestorHorarios.Repositories;
+using GestorHorarios.Services;
 
 namespace GestorHorarios.GRUPOS
 {
     public partial class IngenieriaSeleccionG : UserControl
     {
         private readonly int _idCarrera;
-
-        // NUEVO: Variable para saber si estamos editando o agregando un grupo
+        private readonly ICarreraRepository _carreraRepository;
+        private readonly IGrupoRepository _grupoRepository;
         private int? _idGrupoEnEdicion = null;
 
         public IngenieriaSeleccionG()
         {
             InitializeComponent();
+            _carreraRepository = new CarreraRepository();
+            _grupoRepository = new GrupoRepository();
         }
 
         public IngenieriaSeleccionG(int idCarrera) : this()
         {
             _idCarrera = idCarrera;
             CargarTituloCarrera();
-
             CargarOpcionesFormulario();
             CargarGrupos();
         }
@@ -59,14 +59,7 @@ namespace GestorHorarios.GRUPOS
         {
             try
             {
-                using var conn = new SqlConnection(DatabaseService.GetConnectionString());
-                using var cmd = new SqlCommand("sp_ObtenerNombreCarrera", conn)
-                {
-                    CommandType = CommandType.StoredProcedure
-                };
-                cmd.Parameters.AddWithValue("@id_carrera", _idCarrera);
-                conn.Open();
-                var resultado = cmd.ExecuteScalar();
+                var resultado = _carreraRepository.ObtenerNombre(_idCarrera);
                 TituloCarrera.Text = $"Grupos — {resultado}";
             }
             catch
@@ -82,27 +75,7 @@ namespace GestorHorarios.GRUPOS
 
             try
             {
-                var grupos = new List<Grupo>();
-
-                using var conn = new SqlConnection(DatabaseService.GetConnectionString());
-                using var cmd = new SqlCommand("sp_GetGruposByCarrera", conn)
-                {
-                    CommandType = CommandType.StoredProcedure
-                };
-                cmd.Parameters.AddWithValue("@id_carrera", _idCarrera);
-                conn.Open();
-                using var reader = cmd.ExecuteReader();
-                while (reader.Read())
-                {
-                    grupos.Add(new Grupo
-                    {
-                        IdGrupo = Convert.ToInt32(reader["id_grupo"]),
-                        Nombre = reader["NombreGrupo"]?.ToString() ?? reader["nombre"]?.ToString() ?? "",
-                        Semestre = Convert.ToInt32(reader["semestre"]),
-                        Turno = reader["turno"].ToString() ?? "",
-                        NombreCarrera = reader["NombreCarrera"]?.ToString() ?? ""
-                    });
-                }
+                var grupos = _grupoRepository.ObtenerPorCarrera(_idCarrera);
 
                 var cicloB = grupos.Where(g => g.Semestre % 2 != 0).OrderBy(g => g.Semestre).ToList();
                 var cicloA = grupos.Where(g => g.Semestre % 2 == 0).OrderBy(g => g.Semestre).ToList();
@@ -144,23 +117,27 @@ namespace GestorHorarios.GRUPOS
             }
         }
 
-        // ==========================================
-        // DISEÑO MODERNO DE LA TARJETA DEL GRUPO
-        // ==========================================
         private Border CrearCardGrupo(Grupo grupo)
         {
             var border = new Border
             {
                 Style = (Style)FindResource("GrupoCardStyle"),
-                Tag = grupo
+                Tag = grupo,
+                BorderBrush = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#DDDDDD")),
+                BorderThickness = new Thickness(1)
             };
 
-            var grid = new Grid();
-            grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) }); // Nombre
-            grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(140) }); // Badge de Turno
-            grid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto }); // Botones
+            if (grupo.EsEspecial)
+            {
+                border.BorderBrush = new SolidColorBrush(Colors.DarkOrange);
+                border.BorderThickness = new Thickness(2);
+            }
 
-            // 1. Título del Grupo
+            var grid = new Grid();
+            grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+            grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(140) });
+            grid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+
             var nombreText = new TextBlock
             {
                 Text = grupo.Nombre,
@@ -172,10 +149,9 @@ namespace GestorHorarios.GRUPOS
             Grid.SetColumn(nombreText, 0);
             grid.Children.Add(nombreText);
 
-            // 2. Insignia (Badge) del Turno con colores dinámicos
             bool esMatutino = grupo.Turno.ToLower().Contains("matutino");
-            string badgeBgColor = esMatutino ? "#E8F5E9" : "#FFF3E0"; // Verde pastel o Naranja pastel
-            string badgeFgColor = esMatutino ? "#2E7D32" : "#E65100"; // Verde oscuro o Naranja oscuro
+            string badgeBgColor = esMatutino ? "#E8F5E9" : "#FFF3E0";
+            string badgeFgColor = esMatutino ? "#2E7D32" : "#E65100";
 
             var turnoBadge = new Border
             {
@@ -195,7 +171,6 @@ namespace GestorHorarios.GRUPOS
             Grid.SetColumn(turnoBadge, 1);
             grid.Children.Add(turnoBadge);
 
-            // 3. Panel de Botones Modernos
             var buttonStack = new StackPanel
             {
                 Orientation = Orientation.Horizontal,
@@ -203,13 +178,11 @@ namespace GestorHorarios.GRUPOS
                 Margin = new Thickness(10, 0, 0, 0)
             };
 
-            // Botón Editar (Gris Pizarra)
             string pathLapiz = "M3 17.25V21h3.75L17.81 9.94l-3.75-3.75L3 17.25zM20.71 7.04c.39-.39.39-1.02 0-1.41l-2.34-2.34c-.39-.39-1.02-.39-1.41 0l-1.83 1.83 3.75 3.75 1.83-1.83z";
             var btnEditar = CrearBotonAccion("Editar", pathLapiz, "#475569");
             btnEditar.Tag = grupo;
             btnEditar.Click += EditarGrupo_Click;
 
-            // Botón Eliminar (Rojo Moderno)
             string pathBasura = "M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z";
             var btnEliminar = CrearBotonAccion("Eliminar", pathBasura, "#E11D48");
             btnEliminar.Tag = grupo.IdGrupo;
@@ -225,9 +198,6 @@ namespace GestorHorarios.GRUPOS
             return border;
         }
 
-        // ==========================================
-        // GENERADOR AUTOMÁTICO DE BOTONES CON ÍCONOS
-        // ==========================================
         private Button CrearBotonAccion(string texto, string pathData, string bgColor)
         {
             var btn = new Button
@@ -264,9 +234,6 @@ namespace GestorHorarios.GRUPOS
             Margin = new Thickness(0, 4, 0, 4)
         };
 
-        // ==========================================
-        // LÓGICA DE FORMULARIOS Y BOTONES BÁSICOS
-        // ==========================================
         private void BotonMostrarAgregarGrupo_Click(object sender, RoutedEventArgs e)
         {
             if (PanelFormularioGrupo.Visibility == Visibility.Collapsed)
@@ -289,6 +256,7 @@ namespace GestorHorarios.GRUPOS
             TextboxNombre.Clear();
             ComboBoxSemestre.SelectedIndex = -1;
             ComboBoxTurno.SelectedIndex = -1;
+            CheckBoxEsEspecial.IsChecked = false;
             _idGrupoEnEdicion = null;
             BotonGuardarGrupo.Content = "Guardar";
         }
@@ -318,6 +286,8 @@ namespace GestorHorarios.GRUPOS
                     }
                 }
 
+                CheckBoxEsEspecial.IsChecked = grupo.EsEspecial;
+
                 BotonGuardarGrupo.Content = "Actualizar";
                 BotonMostrarAgregarGrupo.Content = "Cancelar edición";
                 BotonMostrarAgregarGrupo.Background = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#475569"));
@@ -337,33 +307,21 @@ namespace GestorHorarios.GRUPOS
 
             int semestreSeleccionado = (int)((ComboBoxItem)ComboBoxSemestre.SelectedItem).Tag;
             string turnoSeleccionado = ((ComboBoxItem)ComboBoxTurno.SelectedItem).Tag.ToString()!;
+            bool esEspecial = CheckBoxEsEspecial.IsChecked == true;
 
             try
             {
-                using var conn = new SqlConnection(DatabaseService.GetConnectionString());
-                using var cmd = new SqlCommand();
-                cmd.Connection = conn;
-
-                if (_idGrupoEnEdicion == null)
+                var grupo = new Grupo
                 {
-                    cmd.CommandText = @"INSERT INTO Grupos (nombre, semestre, turno, id_carrera) 
-                                        VALUES (@nombre, @semestre, @turno, @id_carrera)";
-                }
-                else
-                {
-                    cmd.CommandText = @"UPDATE Grupos 
-                                        SET nombre = @nombre, semestre = @semestre, turno = @turno 
-                                        WHERE id_grupo = @id_grupo";
-                    cmd.Parameters.AddWithValue("@id_grupo", _idGrupoEnEdicion.Value);
-                }
+                    IdGrupo = _idGrupoEnEdicion ?? 0,
+                    Nombre = TextboxNombre.Text.Trim().ToUpperInvariant(),
+                    Semestre = semestreSeleccionado,
+                    Turno = turnoSeleccionado,
+                    IdCarrera = _idCarrera,
+                    EsEspecial = esEspecial
+                };
 
-                cmd.Parameters.AddWithValue("@nombre", TextboxNombre.Text.Trim().ToUpper());
-                cmd.Parameters.AddWithValue("@semestre", semestreSeleccionado);
-                cmd.Parameters.AddWithValue("@turno", turnoSeleccionado);
-                cmd.Parameters.AddWithValue("@id_carrera", _idCarrera);
-
-                conn.Open();
-                cmd.ExecuteNonQuery();
+                _grupoRepository.Guardar(grupo);
 
                 MessageBox.Show(_idGrupoEnEdicion == null ? "Grupo guardado exitosamente." : "Grupo actualizado exitosamente.",
                                 "Éxito", MessageBoxButton.OK, MessageBoxImage.Information);
@@ -401,11 +359,7 @@ namespace GestorHorarios.GRUPOS
 
             try
             {
-                using var conn = new SqlConnection(DatabaseService.GetConnectionString());
-                using var cmd = new SqlCommand("DELETE FROM Grupos WHERE id_grupo = @id", conn);
-                cmd.Parameters.AddWithValue("@id", idGrupo);
-                conn.Open();
-                cmd.ExecuteNonQuery();
+                _grupoRepository.Eliminar(idGrupo);
 
                 MessageBox.Show("Grupo eliminado correctamente.", "Éxito", MessageBoxButton.OK, MessageBoxImage.Information);
                 CargarGrupos();

@@ -1,16 +1,19 @@
-﻿using GestorHorarios.Services;
-using Microsoft.Data.SqlClient;
-using System.Data;
+using System;
 using System.Windows.Controls;
 using System.Windows.Input;
+using GestorHorarios.Repositories;
+using GestorHorarios.Services;
 
 namespace GestorHorarios.GRUPOS
 {
     public partial class GruposView : UserControl
     {
-        public GruposView()
+        private readonly IGrupoRepository _grupoRepository;
+
+        public GruposView(IGrupoRepository? grupoRepository = null)
         {
             InitializeComponent();
+            _grupoRepository = grupoRepository ?? new GrupoRepository();
             CargarConteoGrupos();
         }
 
@@ -18,25 +21,18 @@ namespace GestorHorarios.GRUPOS
         {
             try
             {
-                TextBlock[] bloques = {
+                TextBlock[] bloques =
+                {
                     TxtGruposSistemas, TxtGruposCivil, TxtGruposComunitario,
                     TxtGruposEmpresarial, TxtGruposIndustrial, TxtGruposBioquimica
                 };
 
-                using var conn = new SqlConnection(DatabaseService.GetConnectionString());
-                using var cmd = new SqlCommand("sp_ContarGruposPorCarrera", conn)
-                {
-                    CommandType = CommandType.StoredProcedure
-                };
-                conn.Open();
-                using var reader = cmd.ExecuteReader();
+                var conteos = _grupoRepository.ContarPorCarrera();
 
-                int i = 0;
-                while (reader.Read() && i < bloques.Length)
+                for (int i = 0; i < conteos.Count && i < bloques.Length; i++)
                 {
-                    int total = Convert.ToInt32(reader["TotalGrupos"]);
+                    int total = conteos[i].TotalGrupos;
                     bloques[i].Text = $"{total} {(total == 1 ? "Grupo" : "Grupos")}";
-                    i++;
                 }
             }
             catch (Exception ex)

@@ -11,5 +11,7 @@ namespace GestorHorarios.Models
         public int Creditos { get; set; }
 
         public int Semestre { get; set; }
+
+        public bool RequiereLaboratorio { get; set; }
     }
 }

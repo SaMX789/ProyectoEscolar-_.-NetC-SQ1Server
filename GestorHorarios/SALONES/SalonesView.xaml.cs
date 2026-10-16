@@ -1,22 +1,26 @@
-﻿using GestorHorarios.Models;
-using GestorHorarios.Services;
-using Microsoft.Data.SqlClient;
-using System.Data;
+using System;
+using System.Collections.Generic;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Media;
+using GestorHorarios.Models;
+using GestorHorarios.Repositories;
 
 namespace GestorHorarios.SALONES
 {
     public partial class SalonesView : UserControl
     {
+        private readonly ISalonRepository _salonRepository;
+        private readonly ICarreraRepository _carreraRepository;
         private int? _idSalonEnEdicion = null;
         private readonly List<(int Id, string Nombre)> _edificios = new();
         private readonly List<(int Id, string Nombre)> _carreras = new();
 
-        public SalonesView()
+        public SalonesView(ISalonRepository? salonRepository = null, ICarreraRepository? carreraRepository = null)
         {
             InitializeComponent();
+            _salonRepository = salonRepository ?? new SalonRepository();
+            _carreraRepository = carreraRepository ?? new CarreraRepository();
             CargarEdificios();
             CargarCarreras();
             CargarSalones();
@@ -28,15 +32,9 @@ namespace GestorHorarios.SALONES
         {
             try
             {
-                using var conn = new SqlConnection(DatabaseService.GetConnectionString());
-                using var cmd = new SqlCommand(
-                    "SELECT id_edificio, nombre FROM Edificios ORDER BY nombre", conn);
-                conn.Open();
-                using var reader = cmd.ExecuteReader();
-                while (reader.Read())
+                var edificios = _salonRepository.ObtenerEdificios();
+                foreach (var (id, nombre) in edificios)
                 {
-                    int id = Convert.ToInt32(reader["id_edificio"]);
-                    string nombre = reader["nombre"].ToString() ?? "";
                     _edificios.Add((id, nombre));
                     ComboBoxEdificio.Items.Add(new ComboBoxItem
                     {
@@ -55,20 +53,14 @@ namespace GestorHorarios.SALONES
         {
             try
             {
-                using var conn = new SqlConnection(DatabaseService.GetConnectionString());
-                using var cmd = new SqlCommand(
-                    "SELECT id_carrera, nombre FROM Carreras ORDER BY nombre", conn);
-                conn.Open();
-                using var reader = cmd.ExecuteReader();
-                while (reader.Read())
+                var carreras = _carreraRepository.ObtenerTodas();
+                foreach (var c in carreras)
                 {
-                    int id = Convert.ToInt32(reader["id_carrera"]);
-                    string nombre = reader["nombre"].ToString() ?? "";
-                    _carreras.Add((id, nombre));
+                    _carreras.Add((c.IdCarrera, c.Nombre));
 
-                    ComboBoxCarrera1.Items.Add(new ComboBoxItem { Content = nombre, Tag = id });
-                    ComboBoxCarrera2.Items.Add(new ComboBoxItem { Content = nombre, Tag = id });
-                    ComboBoxCarrera3.Items.Add(new ComboBoxItem { Content = nombre, Tag = id });
+                    ComboBoxCarrera1.Items.Add(new ComboBoxItem { Content = c.Nombre, Tag = c.IdCarrera });
+                    ComboBoxCarrera2.Items.Add(new ComboBoxItem { Content = c.Nombre, Tag = c.IdCarrera });
+                    ComboBoxCarrera3.Items.Add(new ComboBoxItem { Content = c.Nombre, Tag = c.IdCarrera });
                 }
             }
             catch (Exception ex)
@@ -83,43 +75,7 @@ namespace GestorHorarios.SALONES
 
             try
             {
-                var salones = new List<Salon>();
-
-                using var conn = new SqlConnection(DatabaseService.GetConnectionString());
-                using var cmd = new SqlCommand("sp_GetSalones", conn)
-                {
-                    CommandType = CommandType.StoredProcedure
-                };
-                conn.Open();
-                using var reader = cmd.ExecuteReader();
-                while (reader.Read())
-                {
-                    var salon = new Salon
-                    {
-                        IdSalon = Convert.ToInt32(reader["id_salon"]),
-                        Nombre = reader["NombreSalon"].ToString() ?? "",
-                        Capacidad = Convert.ToInt32(reader["capacidad"]),
-                        NombreEdificio = reader["NombreEdificio"].ToString() ?? "",
-                        NombreCarrera = reader["NombreCarrera"].ToString() ?? ""
-                    };
-
-                    if (reader["id_carrera"] != DBNull.Value)
-                        salon.IdCarrera = Convert.ToInt32(reader["id_carrera"]);
-
-                    if (HasColumn(reader, "id_carreraSecundaria") && reader["id_carreraSecundaria"] != DBNull.Value)
-                    {
-                        salon.IdCarreraSecundaria = Convert.ToInt32(reader["id_carreraSecundaria"]);
-                        salon.NombreCarreraSecundaria = reader["NombreCarreraSecundaria"]?.ToString() ?? "";
-                    }
-
-                    if (HasColumn(reader, "id_carreraTerciaria") && reader["id_carreraTerciaria"] != DBNull.Value)
-                    {
-                        salon.IdCarreraTerciaria = Convert.ToInt32(reader["id_carreraTerciaria"]);
-                        salon.NombreCarreraTerciaria = reader["NombreCarreraTerciaria"]?.ToString() ?? "";
-                    }
-
-                    salones.Add(salon);
-                }
+                var salones = _salonRepository.ObtenerTodos();
 
                 if (salones.Count == 0)
                 {
@@ -151,16 +107,6 @@ namespace GestorHorarios.SALONES
             }
         }
 
-        private bool HasColumn(SqlDataReader reader, string columnName)
-        {
-            for (int i = 0; i < reader.FieldCount; i++)
-            {
-                if (reader.GetName(i).Equals(columnName, StringComparison.InvariantCultureIgnoreCase))
-                    return true;
-            }
-            return false;
-        }
-
         // ── Creación de tarjeta ─────────────────────────────────────────
 
         private Border CrearCardSalon(Salon salon)
@@ -176,7 +122,6 @@ namespace GestorHorarios.SALONES
             grid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
             grid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
 
-            // Construir el texto con las carreras asignadas de forma dinámica
             string carrerasTexto = salon.NombreCarrera;
             if (!string.IsNullOrWhiteSpace(salon.NombreCarreraSecundaria))
                 carrerasTexto += $", {salon.NombreCarreraSecundaria}";
@@ -290,11 +235,11 @@ namespace GestorHorarios.SALONES
                 return;
             }
 
-            int? idEdificio = null;
+            int idEdificio = 0;
             if (ComboBoxEdificio.SelectedItem is ComboBoxItem cbEdItem && cbEdItem.Tag is int idEd)
                 idEdificio = idEd;
 
-            int? idCarrera = null;
+            int idCarrera = 0;
             if (ComboBoxCarrera1?.SelectedItem is ComboBoxItem cbCar1 && cbCar1.Tag is int idC1)
                 idCarrera = idC1;
 
@@ -317,46 +262,24 @@ namespace GestorHorarios.SALONES
 
             try
             {
-                using var conn = new SqlConnection(DatabaseService.GetConnectionString());
-                conn.Open();
-
-                if (_idSalonEnEdicion == null)
+                var salon = new Salon
                 {
-                    using var cmd = new SqlCommand(
-                        @"INSERT INTO Salones (nombre, capacidad, id_edificio, id_carrera, id_carreraSecundaria, id_carreraTerciaria) 
-                          VALUES (@nombre, @cap, @edificio, @carrera, @carreraSec, @carreraTer)",
-                        conn);
-                    cmd.Parameters.AddWithValue("@nombre", nombre);
-                    cmd.Parameters.AddWithValue("@cap", capacidad);
-                    cmd.Parameters.AddWithValue("@edificio", (object?)idEdificio ?? DBNull.Value);
-                    cmd.Parameters.AddWithValue("@carrera", (object?)idCarrera ?? DBNull.Value);
-                    cmd.Parameters.AddWithValue("@carreraSec", (object?)idCarreraSecundaria ?? DBNull.Value);
-                    cmd.Parameters.AddWithValue("@carreraTer", (object?)idCarreraTerciaria ?? DBNull.Value);
-                    cmd.ExecuteNonQuery();
+                    IdSalon = _idSalonEnEdicion ?? 0,
+                    Nombre = nombre,
+                    Capacidad = capacidad,
+                    IdEdificio = idEdificio,
+                    IdCarrera = idCarrera,
+                    IdCarreraSecundaria = idCarreraSecundaria,
+                    IdCarreraTerciaria = idCarreraTerciaria
+                };
 
-                    MessageBox.Show($"Salón '{nombre}' agregado correctamente.",
-                        "Éxito", MessageBoxButton.OK, MessageBoxImage.Information);
-                }
-                else
-                {
-                    using var cmd = new SqlCommand(
-                        @"UPDATE Salones 
-                          SET nombre=@nombre, capacidad=@cap, id_edificio=@edificio, 
-                              id_carrera=@carrera, id_carreraSecundaria=@carreraSec, id_carreraTerciaria=@carreraTer 
-                          WHERE id_salon=@id",
-                        conn);
-                    cmd.Parameters.AddWithValue("@nombre", nombre);
-                    cmd.Parameters.AddWithValue("@cap", capacidad);
-                    cmd.Parameters.AddWithValue("@edificio", (object?)idEdificio ?? DBNull.Value);
-                    cmd.Parameters.AddWithValue("@carrera", (object?)idCarrera ?? DBNull.Value);
-                    cmd.Parameters.AddWithValue("@carreraSec", (object?)idCarreraSecundaria ?? DBNull.Value);
-                    cmd.Parameters.AddWithValue("@carreraTer", (object?)idCarreraTerciaria ?? DBNull.Value);
-                    cmd.Parameters.AddWithValue("@id", _idSalonEnEdicion.Value);
-                    cmd.ExecuteNonQuery();
+                _salonRepository.Guardar(salon);
 
-                    MessageBox.Show($"Salón '{nombre}' actualizado correctamente.",
-                        "Éxito", MessageBoxButton.OK, MessageBoxImage.Information);
-                }
+                MessageBox.Show(
+                    _idSalonEnEdicion == null
+                        ? $"Salón '{nombre}' agregado correctamente."
+                        : $"Salón '{nombre}' actualizado correctamente.",
+                    "Éxito", MessageBoxButton.OK, MessageBoxImage.Information);
 
                 _idSalonEnEdicion = null;
                 LimpiarFormulario();
@@ -448,12 +371,7 @@ namespace GestorHorarios.SALONES
 
             try
             {
-                using var conn = new SqlConnection(DatabaseService.GetConnectionString());
-                using var cmd = new SqlCommand(
-                    "DELETE FROM Salones WHERE id_salon = @id", conn);
-                cmd.Parameters.AddWithValue("@id", idSalon);
-                conn.Open();
-                cmd.ExecuteNonQuery();
+                _salonRepository.Eliminar(idSalon);
 
                 MessageBox.Show("Salón eliminado correctamente.",
                     "Éxito", MessageBoxButton.OK, MessageBoxImage.Information);

@@ -1,52 +1,15 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using Xceed.Document.NET;
 using Xceed.Words.NET;
 using Xceed.Drawing;
-using static GestorHorarios.PROYECTOS.HorarioCarreraView;
+using GestorHorarios.Models;
 
 namespace GestorHorarios.Services
 {
     public class GeneradorWordService
     {
-        // =====================================================================================
-        // CLASES DE APOYO Y LISTAS DE BLOQUES
-        // =====================================================================================
-        private class BloqueWord
-        {
-            public string Horario { get; set; } = "";
-            public int IdBloque { get; set; }
-            public bool EsReceso { get; set; }
-        }
-
-        private readonly List<BloqueWord> BLOQUES_MATUTINO = new List<BloqueWord>
-        {
-            new BloqueWord { Horario = "7:30 - 8:30", IdBloque = 1 }, new BloqueWord { Horario = "8:30 - 9:20", IdBloque = 2 },
-            new BloqueWord { Horario = "9:20 - 9:40", IdBloque = 0, EsReceso = true }, new BloqueWord { Horario = "9:40 - 10:30", IdBloque = 3 },
-            new BloqueWord { Horario = "10:30 - 11:30", IdBloque = 4 }, new BloqueWord { Horario = "11:30 - 12:30", IdBloque = 5 },
-            new BloqueWord { Horario = "12:30 - 13:30", IdBloque = 6 }, new BloqueWord { Horario = "13:30 - 14:30", IdBloque = 7 }
-        };
-
-        private readonly List<BloqueWord> BLOQUES_VESPERTINO = new List<BloqueWord>
-        {
-            new BloqueWord { Horario = "12:30 - 13:30", IdBloque = 6 }, new BloqueWord { Horario = "13:30 - 14:30", IdBloque = 7 },
-            new BloqueWord { Horario = "14:30 - 15:20", IdBloque = 8 }, new BloqueWord { Horario = "15:20 - 15:40", IdBloque = 0, EsReceso = true },
-            new BloqueWord { Horario = "15:40 - 16:30", IdBloque = 9 }, new BloqueWord { Horario = "16:30 - 17:30", IdBloque = 10 },
-            new BloqueWord { Horario = "17:30 - 18:30", IdBloque = 11 }, new BloqueWord { Horario = "18:30 - 19:30", IdBloque = 12 }
-        };
-
-        private readonly List<BloqueWord> BLOQUES_UNIFICADOS = new List<BloqueWord>
-        {
-            new BloqueWord { Horario = "7:30 - 8:30", IdBloque = 1 }, new BloqueWord { Horario = "8:30 - 9:20", IdBloque = 2 },
-            new BloqueWord { Horario = "9:20 - 9:40", IdBloque = 0, EsReceso = true }, new BloqueWord { Horario = "9:40 - 10:30", IdBloque = 3 },
-            new BloqueWord { Horario = "10:30 - 11:30", IdBloque = 4 }, new BloqueWord { Horario = "11:30 - 12:30", IdBloque = 5 },
-            new BloqueWord { Horario = "12:30 - 13:30", IdBloque = 6 }, new BloqueWord { Horario = "13:30 - 14:30", IdBloque = 7 },
-            new BloqueWord { Horario = "14:30 - 15:20", IdBloque = 8 }, new BloqueWord { Horario = "15:20 - 15:40", IdBloque = 0, EsReceso = true },
-            new BloqueWord { Horario = "15:40 - 16:30", IdBloque = 9 }, new BloqueWord { Horario = "16:30 - 17:30", IdBloque = 10 },
-            new BloqueWord { Horario = "17:30 - 18:30", IdBloque = 11 }, new BloqueWord { Horario = "18:30 - 19:30", IdBloque = 12 }
-        };
-
         public class GrupoData
         {
             public string NombreGrupo { get; set; } = "";
@@ -77,7 +40,7 @@ namespace GestorHorarios.Services
                 {
                     var data = gruposData[i];
                     bool esMatutino = data.Turno?.ToLower().Contains("matutino") == true || data.Turno?.ToLower().StartsWith("m") == true;
-                    var bloques = esMatutino ? BLOQUES_MATUTINO : BLOQUES_VESPERTINO;
+                    var bloques = esMatutino ? BloqueHorarioInfo.Matutino : BloqueHorarioInfo.Vespertino;
 
                     var titulo = document.InsertParagraph($"Horarios — {nombreCarrera}");
                     titulo.FontSize(18).Color(Xceed.Drawing.Color.Parse(144, 25, 65)).Bold().Alignment = Alignment.center;
@@ -210,7 +173,7 @@ namespace GestorHorarios.Services
                     infoGrupo.FontSize(14).Color(Xceed.Drawing.Color.Parse(21, 101, 192)).Bold().Alignment = Alignment.left;
                     infoGrupo.SpacingAfter(10d);
 
-                    Table table = document.AddTable(BLOQUES_UNIFICADOS.Count + 1, 6);
+                    Table table = document.AddTable(BloqueHorarioInfo.Unificados.Count + 1, 6);
                     table.Alignment = Alignment.center;
                     table.Design = TableDesign.TableGrid;
 
@@ -229,9 +192,9 @@ namespace GestorHorarios.Services
                         cell.MarginBottom = 5;
                     }
 
-                    for (int r = 0; r < BLOQUES_UNIFICADOS.Count; r++)
+                    for (int r = 0; r < BloqueHorarioInfo.Unificados.Count; r++)
                     {
-                        var bloque = BLOQUES_UNIFICADOS[r];
+                        var bloque = BloqueHorarioInfo.Unificados[r];
                         var row = table.Rows[r + 1];
 
                         row.Cells[0].FillColor = Xceed.Drawing.Color.White;

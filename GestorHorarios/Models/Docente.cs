@@ -16,10 +16,10 @@ namespace GestorHorarios.Models
         public int IdCarreraPrincipal { get; set; }
         public List<int> MateriasIds { get; set; } = new();
         public List<int> CarrerasSecundariasIds { get; set; } = new();
-        public string Nombre { get; internal set; }
+        public string Nombre { get; internal set; } = "";
         public int HorasFrenteGrupo { get; set; }
 
-        // Propiedad clave para las restricciones de horario del motor matem·tico
+        // Propiedad clave para las restricciones de horario del motor matem√°tico
         public HashSet<string> DisponibilidadBloques { get; set; } = new();
     }
 

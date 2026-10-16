@@ -1,15 +1,16 @@
-﻿using GestorHorarios.DOCENTES;
+using System;
+using System.Globalization;
+using System.Windows;
+using System.Windows.Controls;
+using System.Windows.Media;
+using GestorHorarios.DOCENTES;
 using GestorHorarios.GRUPOS;
 using GestorHorarios.MATERIAS;
 using GestorHorarios.Models;
 using GestorHorarios.PROYECTOS;
 using GestorHorarios.SALONES;
 using GestorHorarios.Services;
-using Microsoft.Data.SqlClient;
-using System.Globalization;
-using System.Windows;
-using System.Windows.Controls;
-using System.Windows.Media;
+using GestorHorarios.ViewModels;
 
 namespace GestorHorarios
 {
@@ -19,12 +20,15 @@ namespace GestorHorarios
     public partial class MainWindow : Window
     {
         private readonly object _dashboardContent;
+        private readonly MainDashboardViewModel _viewModel;
 
         public INavigationService Navigation { get; }
 
         public MainWindow()
         {
             InitializeComponent();
+            _viewModel = new MainDashboardViewModel();
+            DataContext = _viewModel;
             Navigation = new NavigationService(MainContentControl);
             _dashboardContent = MainContentControl.Content;
             CargarDashboard();
@@ -51,35 +55,17 @@ namespace GestorHorarios
         {
             try
             {
-                using var conn = new SqlConnection(DatabaseService.GetConnectionString());
-                conn.Open();
-
-                TxtStatDocentes.Text = ContarRegistros(conn, "Docentes");
-                TxtStatMaterias.Text = ContarRegistros(conn, "Materias");
-                TxtStatGrupos.Text = ContarRegistros(conn, "Grupos");
-                TxtStatSalones.Text = ContarRegistros(conn, "Salones");
-
-                // Proyectos puede no existir aun
-                try
-                {
-                    TxtStatProyectos.Text = ContarRegistros(conn, "Proyectos", "id_estado = 1");
-                }
-                catch { TxtStatProyectos.Text = "0"; }
+                var stats = _viewModel.ObtenerEstadisticas();
+                TxtStatDocentes.Text = stats.TotalDocentes.ToString();
+                TxtStatMaterias.Text = stats.TotalMaterias.ToString();
+                TxtStatGrupos.Text = stats.TotalGrupos.ToString();
+                TxtStatSalones.Text = stats.TotalSalones.ToString();
+                TxtStatProyectos.Text = stats.TotalProyectos.ToString();
             }
             catch
             {
                 // Si falla la BD, dejar en 0
             }
-        }
-
-        private static string ContarRegistros(SqlConnection conn, string tabla, string? where = null)
-        {
-            string sql = $"SELECT COUNT(*) FROM {tabla}";
-            if (!string.IsNullOrEmpty(where))
-                sql += $" WHERE {where}";
-
-            using var cmd = new SqlCommand(sql, conn);
-            return Convert.ToInt32(cmd.ExecuteScalar()).ToString();
         }
 
         #endregion
@@ -92,7 +78,7 @@ namespace GestorHorarios
 
             try
             {
-                var proyectos = ObtenerProyectos();
+                var proyectos = _viewModel.ObtenerProyectosActivos();
 
                 if (proyectos.Count == 0)
                 {
@@ -123,31 +109,6 @@ namespace GestorHorarios
                     Margin = new Thickness(0, 20, 0, 20)
                 });
             }
-        }
-
-        private static List<Proyecto> ObtenerProyectos()
-        {
-            var lista = new List<Proyecto>();
-            using var conn = new SqlConnection(DatabaseService.GetConnectionString());
-            using var cmd = new SqlCommand(
-                @"SELECT id_proyecto, nombre, anio, periodo, ciclo, fecha_creacion
-                  FROM Proyectos WHERE id_estado = 1
-                  ORDER BY fecha_creacion DESC", conn);
-            conn.Open();
-            using var reader = cmd.ExecuteReader();
-            while (reader.Read())
-            {
-                lista.Add(new Proyecto
-                {
-                    IdProyecto = Convert.ToInt32(reader["id_proyecto"]),
-                    Nombre = reader["nombre"].ToString() ?? "",
-                    Anio = Convert.ToInt32(reader["anio"]),
-                    Periodo = reader["periodo"].ToString() ?? "",
-                    Ciclo = reader["ciclo"].ToString() ?? "",
-                    FechaCreacion = Convert.ToDateTime(reader["fecha_creacion"])
-                });
-            }
-            return lista;
         }
 
         private Border CrearCardProyecto(Proyecto p)
@@ -277,39 +238,16 @@ namespace GestorHorarios
             if (sender is not Button btn || btn.Tag is not int idProyecto) return;
 
             var resultado = MessageBox.Show(
-                "\u00bfEst\u00e1 seguro de eliminar este proyecto y todos sus horarios?",
+                "¿Está seguro de eliminar este proyecto y todos sus horarios?",
                 "Eliminar Proyecto", MessageBoxButton.YesNo, MessageBoxImage.Warning);
 
             if (resultado != MessageBoxResult.Yes) return;
 
             try
             {
-                using var conn = new SqlConnection(DatabaseService.GetConnectionString());
-                conn.Open();
-                using var tx = conn.BeginTransaction();
-                try
-                {
-                    using (var cmd = new SqlCommand(
-                        "DELETE FROM HorarioDetalle WHERE id_proyecto = @id", conn, tx))
-                    {
-                        cmd.Parameters.AddWithValue("@id", idProyecto);
-                        cmd.ExecuteNonQuery();
-                    }
-                    using (var cmd = new SqlCommand(
-                        "DELETE FROM Proyectos WHERE id_proyecto = @id", conn, tx))
-                    {
-                        cmd.Parameters.AddWithValue("@id", idProyecto);
-                        cmd.ExecuteNonQuery();
-                    }
-                    tx.Commit();
-                }
-                catch
-                {
-                    tx.Rollback();
-                    throw;
-                }
+                _viewModel.EliminarProyecto(idProyecto);
 
-                MessageBox.Show("Proyecto eliminado.", "\u00c9xito",
+                MessageBox.Show("Proyecto eliminado.", "Éxito",
                     MessageBoxButton.OK, MessageBoxImage.Information);
                 CargarDashboard();
             }

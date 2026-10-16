@@ -1,20 +1,23 @@
-using GestorHorarios.Models;
-using GestorHorarios.Services;
-using Microsoft.Data.SqlClient;
+using System;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Media;
+using GestorHorarios.Models;
+using GestorHorarios.Repositories;
+using GestorHorarios.Services;
 
 namespace GestorHorarios.PROYECTOS
 {
     public partial class NuevoProyectoView : UserControl
     {
+        private readonly IProyectoRepository _proyectoRepository;
         private string _cicloSeleccionado = "";
 
-        public NuevoProyectoView()
+        public NuevoProyectoView(IProyectoRepository? proyectoRepository = null)
         {
             InitializeComponent();
+            _proyectoRepository = proyectoRepository ?? new ProyectoRepository();
             TxtAnio.Text = DateTime.Now.Year.ToString();
             TxtFechaCreacion.Text = DateTime.Now.ToString("dd/MM/yyyy");
         }
@@ -40,7 +43,7 @@ namespace GestorHorarios.PROYECTOS
                 CardCicloA.BorderBrush = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#1565C0"));
                 CardCicloB.BorderBrush = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#DDDDDD"));
                 TxtPeriodo.Text = "Enero-Junio";
-                TxtCicloSeleccionado.Text = "Ciclo A - Enero a Junio (2\u00b0, 4\u00b0, 6\u00b0, 8\u00b0)";
+                TxtCicloSeleccionado.Text = "Ciclo A - Enero a Junio (2°, 4°, 6°, 8°)";
                 TxtCicloSeleccionado.Foreground = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#1565C0"));
                 BadgeCicloSeleccionado.Background = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#E3F2FD"));
             }
@@ -49,7 +52,7 @@ namespace GestorHorarios.PROYECTOS
                 CardCicloB.BorderBrush = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#2E7D32"));
                 CardCicloA.BorderBrush = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#DDDDDD"));
                 TxtPeriodo.Text = "Agosto-Diciembre";
-                TxtCicloSeleccionado.Text = "Ciclo B - Agosto a Diciembre (1\u00b0, 3\u00b0, 5\u00b0, 7\u00b0, 9\u00b0)";
+                TxtCicloSeleccionado.Text = "Ciclo B - Agosto a Diciembre (1°, 3°, 5°, 7°, 9°)";
                 TxtCicloSeleccionado.Foreground = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#2E7D32"));
                 BadgeCicloSeleccionado.Background = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#E8F5E9"));
             }
@@ -66,29 +69,29 @@ namespace GestorHorarios.PROYECTOS
         {
             if (string.IsNullOrWhiteSpace(_cicloSeleccionado))
             {
-                MessageBox.Show("Selecciona un ciclo escolar.", "Validaci\u00f3n",
+                MessageBox.Show("Selecciona un ciclo escolar.", "Validación",
                     MessageBoxButton.OK, MessageBoxImage.Warning);
                 return;
             }
 
             if (string.IsNullOrWhiteSpace(TxtNombre.Text))
             {
-                MessageBox.Show("Ingresa el nombre del proyecto.", "Validaci\u00f3n",
+                MessageBox.Show("Ingresa el nombre del proyecto.", "Validación",
                     MessageBoxButton.OK, MessageBoxImage.Warning);
                 return;
             }
 
             if (!int.TryParse(TxtAnio.Text, out int anio) || anio < 2020 || anio > 2100)
             {
-                MessageBox.Show("Ingresa un a\u00f1o v\u00e1lido.", "Validaci\u00f3n",
+                MessageBox.Show("Ingresa un año válido.", "Validación",
                     MessageBoxButton.OK, MessageBoxImage.Warning);
                 return;
             }
 
             try
             {
-                int idProyecto = GuardarProyecto(TxtNombre.Text.Trim(), anio,
-                    TxtPeriodo.Text, _cicloSeleccionado);
+                int idProyecto = _proyectoRepository.CrearProyecto(
+                    TxtNombre.Text.Trim(), anio, TxtPeriodo.Text, _cicloSeleccionado);
 
                 var proyecto = new Proyecto
                 {
@@ -108,22 +111,6 @@ namespace GestorHorarios.PROYECTOS
                 MessageBox.Show($"Error al guardar el proyecto: {ex.Message}",
                     "Error", MessageBoxButton.OK, MessageBoxImage.Error);
             }
-        }
-
-        private static int GuardarProyecto(string nombre, int anio, string periodo, string ciclo)
-        {
-            using var conn = new SqlConnection(DatabaseService.GetConnectionString());
-            using var cmd = new SqlCommand(@"
-                INSERT INTO Proyectos (nombre, anio, periodo, ciclo, fecha_creacion, id_estado)
-                VALUES (@nombre, @anio, @periodo, @ciclo, GETDATE(), 1);
-                SELECT SCOPE_IDENTITY();", conn);
-
-            cmd.Parameters.AddWithValue("@nombre", nombre);
-            cmd.Parameters.AddWithValue("@anio", anio);
-            cmd.Parameters.AddWithValue("@periodo", periodo);
-            cmd.Parameters.AddWithValue("@ciclo", ciclo);
-            conn.Open();
-            return Convert.ToInt32(cmd.ExecuteScalar());
         }
 
         #endregion

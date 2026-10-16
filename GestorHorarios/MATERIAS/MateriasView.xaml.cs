@@ -1,7 +1,7 @@
-﻿using GestorHorarios.Services;
-using Microsoft.Data.SqlClient;
-using System.Data;
+using System;
 using System.Windows.Controls;
+using GestorHorarios.Repositories;
+using GestorHorarios.Services;
 
 namespace GestorHorarios.MATERIAS
 {
@@ -10,9 +10,12 @@ namespace GestorHorarios.MATERIAS
     /// </summary>
     public partial class MateriasView : UserControl
     {
-        public MateriasView()
+        private readonly IMateriaRepository _materiaRepository;
+
+        public MateriasView(IMateriaRepository? materiaRepository = null)
         {
             InitializeComponent();
+            _materiaRepository = materiaRepository ?? new MateriaRepository();
             CargarConteos();
         }
 
@@ -27,24 +30,25 @@ namespace GestorHorarios.MATERIAS
 
         private void CargarConteos()
         {
-            string conexion = DatabaseService.GetConnectionString();
-
-            using (SqlConnection conn = new SqlConnection(conexion))
+            try
             {
-                SqlCommand cmd = new SqlCommand("sp_ContarMateriasPorCarrera", conn);
-                cmd.CommandType = CommandType.StoredProcedure;
-
-                conn.Open();
-                using SqlDataReader reader = cmd.ExecuteReader();
-
-                TextBlock[] misTextBlocks = { CantidadMateriasSistemas, CantidadMateriasCivil, CantidadMateriasComunitario, CantidadMateriasEmpresarial, CantidadMateriasIndustrial, CantidadMateriasBioquimica, CantidadMateriasIngles, };
-
-                int i = 0;
-                while (reader.Read() && i < misTextBlocks.Length)
+                TextBlock[] misTextBlocks =
                 {
-                    misTextBlocks[i].Text = reader["TotalMaterias"].ToString();
-                    i++;
+                    CantidadMateriasSistemas, CantidadMateriasCivil, CantidadMateriasComunitario,
+                    CantidadMateriasEmpresarial, CantidadMateriasIndustrial, CantidadMateriasBioquimica,
+                    CantidadMateriasIngles
+                };
+
+                var conteos = _materiaRepository.ContarPorCarrera();
+
+                for (int i = 0; i < conteos.Count && i < misTextBlocks.Length; i++)
+                {
+                    misTextBlocks[i].Text = conteos[i].TotalMaterias.ToString();
                 }
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"Error cargando conteos de materias: {ex.Message}");
             }
         }
     }

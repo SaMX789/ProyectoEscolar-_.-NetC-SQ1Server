@@ -1,7 +1,11 @@
-﻿using GestorHorarios.Models;
+using GestorHorarios.Models;
+using GestorHorarios.Repositories;
 using GestorHorarios.Services;
-using Microsoft.Data.SqlClient;
-using System.Data;
+using System;
+using System.Collections.Generic;
+using System.Collections.ObjectModel;
+using System.ComponentModel;
+using System.Linq;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
@@ -10,12 +14,58 @@ using System.Windows.Shapes;
 
 namespace GestorHorarios.DOCENTES
 {
-    /// <summary>
-    /// Lógica de interacción para IngenieriaSeleccionD.xaml
-    /// </summary>
+    public class GrupoSeleccionado
+    {
+        public int IdGrupo { get; set; }
+        public string Nombre { get; set; } = "";
+        public bool EnLinea { get; set; }
+        public bool EsEspecial { get; set; } // Agregado para el cálculo dinámico
+    }
+
+    public class MateriaTablaDto : INotifyPropertyChanged
+    {
+        public int IdMateria { get; set; }
+        public string Nombre { get; set; } = "";
+        public string CarreraAsociada { get; set; } = "";
+        public int Creditos { get; set; }
+        public int Semestre { get; set; }
+        public int IdCarrera { get; set; }
+
+        public string NombreMostrar => $"{Nombre} ({CarreraAsociada})";
+
+        // NUEVO: Propiedad para agrupar visualmente la tabla
+        public string CicloAsociado => Semestre % 2 == 0 ? "🗓️ CICLO A" : "🗓️ CICLO B";
+
+        private List<GrupoSeleccionado> _gruposSeleccionados = new();
+        public List<GrupoSeleccionado> GruposSeleccionados
+        {
+            get => _gruposSeleccionados;
+            set
+            {
+                _gruposSeleccionados = value;
+                NotificarCambiosUI();
+            }
+        }
+
+        public string GruposTexto => GruposSeleccionados.Count > 0
+            ? string.Join(", ", GruposSeleccionados.Select(g => g.Nombre + (g.EnLinea ? " (En Línea)" : "")))
+            : "Clic para seleccionar...";
+
+        // REGRESAMOS EL CÁLCULO NORMAL PARA LA FILA
+        public int HorasSemana => Creditos * GruposSeleccionados.Count;
+
+        public event PropertyChangedEventHandler? PropertyChanged;
+
+        public void NotificarCambiosUI()
+        {
+            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(GruposTexto)));
+            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(HorasSemana)));
+        }
+    }
     public partial class IngenieriaSeleccionD : UserControl
     {
         #region Constantes
+
         private const double RECT_WIDTH = 50;
         private const double RECT_HEIGHT = 40;
         private const double ROW_HEIGHT = 50;
@@ -39,29 +89,61 @@ namespace GestorHorarios.DOCENTES
         #endregion
 
         #region Campos Privados
+        private readonly IDocenteRepository _docenteRepository;
+        private readonly ICarreraRepository _carreraRepository;
+        private readonly IMateriaRepository _materiaRepository;
+        private readonly IGrupoRepository _grupoRepository;
         private int _idCarrera;
         private readonly List<Carrera> _carrerasDisponibles = new();
-        private readonly List<int> _materiasSeleccionadasIds = new();
         private readonly Dictionary<string, HashSet<int>> _horarioSeleccionado = new();
         private readonly Dictionary<string, UIElement> _secondaryPanels = new();
 
-        // Mapeo id_materia -> nombre para el resumen
-        private readonly Dictionary<int, string> _todasLasMaterias = new();
+        // Mapeo integral de materias para acceder a sus créditos y carreras fácilmente
+        private readonly Dictionary<int, MateriaTablaDto> _todasLasMateriasInfo = new();
 
-        // Total de horas seleccionadas en el Canvas (cada celda = 1 hora)
+        // NUEVO: La lista observable que alimenta directamente al DataGrid
+        private readonly ObservableCollection<MateriaTablaDto> _materiasEnTabla = new();
+
+        // Variable para recordar a qué materia le estamos asignando grupos en el Modal
+        private MateriaTablaDto? _materiaEditandoGrupos = null;
+
         private int _horasAsignadas = 0;
-        private const int HORAS_MAXIMAS_PERMITIDAS = 40;
+        private const int HORAS_MAXIMAS_PERMITIDAS = 60;
 
-        // null = modo agregar, distinto de null = modo editar
         private Docente? _docenteEnEdicion = null;
-
         private UIElement? _mainMateriasPanel;
+
+        // ==========================================
+        // MEMORIA GLOBAL EN SQL SERVER PARA EL CICLO
+        // ==========================================
+        private static bool _calcularCicloAGlobal = new DocenteRepository().LeerPreferenciaCicloA();
+
+        // NUEVO: Lista en memoria para el buscador rápido
+        private readonly List<Docente> _docentesActuales = new();
         #endregion
 
         #region Constructores
         public IngenieriaSeleccionD()
         {
             InitializeComponent();
+            _docenteRepository = new DocenteRepository();
+            _carreraRepository = new CarreraRepository();
+            _materiaRepository = new MateriaRepository();
+            _grupoRepository = new GrupoRepository();
+
+            // Sincronizar botones desde SQL Server antes de cargar las tablas
+            if (RbHFGCicloA != null && RbHFGCicloB != null)
+            {
+                RbHFGCicloA.IsChecked = _calcularCicloAGlobal;
+                RbHFGCicloB.IsChecked = !_calcularCicloAGlobal;
+            }
+
+            // Vinculamos el DataGrid con nuestra lista observable
+            DataGridMaterias.ItemsSource = _materiasEnTabla;
+            // AGRUPAR DATAGRID POR CICLO
+            var cv = System.Windows.Data.CollectionViewSource.GetDefaultView(_materiasEnTabla);
+            cv.GroupDescriptions.Clear();
+            cv.GroupDescriptions.Add(new System.Windows.Data.PropertyGroupDescription("CicloAsociado"));
         }
 
         public IngenieriaSeleccionD(int idCarrera) : this()
@@ -77,14 +159,7 @@ namespace GestorHorarios.DOCENTES
         {
             try
             {
-                using var conn = new SqlConnection(DatabaseService.GetConnectionString());
-                using var cmd = new SqlCommand("sp_ObtenerNombreCarrera", conn)
-                {
-                    CommandType = CommandType.StoredProcedure
-                };
-                cmd.Parameters.AddWithValue("@id_carrera", _idCarrera);
-                conn.Open();
-                var resultado = cmd.ExecuteScalar();
+                var resultado = _carreraRepository.ObtenerNombre(_idCarrera);
                 TituloCarrera.Text = $"Docentes de {resultado}";
             }
             catch
@@ -106,6 +181,8 @@ namespace GestorHorarios.DOCENTES
             {
                 CargarCarrerasYMaterias();
                 GenerarFilasHorario();
+                RbHFGCicloA.IsChecked = _calcularCicloAGlobal;
+                RbHFGCicloB.IsChecked = !_calcularCicloAGlobal;
                 // Disparar carga de materias de la carrera preseleccionada
                 if (ComboBoxCarreraPrincipal.SelectedItem != null)
                     ComboBoxCarreraPrincipal_SelectionChanged(this,
@@ -165,15 +242,12 @@ namespace GestorHorarios.DOCENTES
             var nombre = TextboxNombre.Text.Trim();
             var tipoDocente = (ComboBoxTipoTiempo.SelectedItem as ComboBoxItem)?.Content?.ToString() ?? "TIEMPO COMPLETO";
             int horasMaximas = int.TryParse(TextboxHorasMaximas.Text, out int hm) ? hm : 20;
-            // Capturamos el HFG con fallback a 0 como acordamos
             int horasFrenteGrupo = int.TryParse(TextboxHFG.Text, out int hfg) ? hfg : 0;
 
-            // Obtener id_carrera principal seleccionada
             int idCarreraPrincipal = _idCarrera;
             if (ComboBoxCarreraPrincipal.SelectedItem is ComboBoxItem cbItem && cbItem.Tag is int idTag)
                 idCarreraPrincipal = idTag;
 
-            // Obtener ids de carreras secundarias marcadas
             var idCarrerasSecundarias = new List<int>();
             foreach (var cb in StackPanelCarrerasSecundarias.Children.OfType<CheckBox>())
             {
@@ -181,97 +255,40 @@ namespace GestorHorarios.DOCENTES
                     idCarrerasSecundarias.Add(idSec);
             }
 
-            // Obtener disponibilidad del Canvas
+            var asignaciones = ConstruirAsignacionesMateriaGrupo();
             var disponibilidad = ObtenerDisponibilidadSeleccionada();
 
-            using var conn = new SqlConnection(DatabaseService.GetConnectionString());
-            conn.Open();
-            using var transaction = conn.BeginTransaction();
+            _docenteRepository.GuardarNuevo(
+                nombre,
+                tipoDocente,
+                horasMaximas,
+                horasFrenteGrupo,
+                idCarreraPrincipal,
+                idCarrerasSecundarias,
+                asignaciones,
+                disponibilidad);
+        }
 
-            try
+        private List<(int IdMateria, int? IdGrupo, bool EnLinea)> ConstruirAsignacionesMateriaGrupo()
+        {
+            var asignaciones = new List<(int IdMateria, int? IdGrupo, bool EnLinea)>();
+            foreach (var materia in _materiasEnTabla)
             {
-                // 1. Insertar Docente (Ahora le pasamos horasFrenteGrupo)
-                int idDocente = InsertarDocente(conn, transaction, nombre, tipoDocente, horasMaximas, horasFrenteGrupo);
-
-                // 2. Insertar carrera principal
-                InsertarDocenteCarrera(conn, transaction, idDocente, idCarreraPrincipal, esPrincipal: true);
-
-                // 3. Insertar carreras secundarias
-                foreach (var idSec in idCarrerasSecundarias)
-                    InsertarDocenteCarrera(conn, transaction, idDocente, idSec, esPrincipal: false);
-
-                // 4. Insertar materias impartidas
-                foreach (var idMateria in _materiasSeleccionadasIds.Distinct())
-                    InsertarDocenteMateria(conn, transaction, idDocente, idMateria);
-
-                // 5. Insertar disponibilidad
-                foreach (var (idDia, idBloque) in disponibilidad)
-                    InsertarDisponibilidad(conn, transaction, idDocente, idDia, idBloque);
-
-                transaction.Commit();
+                if (materia.GruposSeleccionados.Count == 0)
+                {
+                    asignaciones.Add((materia.IdMateria, null, false));
+                }
+                else
+                {
+                    foreach (var grupo in materia.GruposSeleccionados)
+                    {
+                        asignaciones.Add((materia.IdMateria, grupo.IdGrupo, grupo.EnLinea));
+                    }
+                }
             }
-            catch
-            {
-                transaction.Rollback();
-                throw;
-            }
+            return asignaciones;
         }
 
-        private static int InsertarDocente(SqlConnection conn, SqlTransaction tx,
-            string nombre, string tipoDocente, int horasMaximas, int horasFrenteGrupo)
-        {
-            using var cmd = new SqlCommand(@"
-                INSERT INTO Docentes (nombre, tipo_docente, id_estado, horas_maximas, horas_frente_grupo)
-                VALUES (@nombre, @tipo, 1, @horas, @hfg);
-                SELECT SCOPE_IDENTITY();", conn, tx);
-
-            cmd.Parameters.AddWithValue("@nombre", nombre);
-            cmd.Parameters.AddWithValue("@tipo", tipoDocente);
-            cmd.Parameters.AddWithValue("@horas", horasMaximas);
-            cmd.Parameters.AddWithValue("@hfg", horasFrenteGrupo);
-
-            return Convert.ToInt32(cmd.ExecuteScalar());
-        }
-
-        private static void InsertarDocenteCarrera(SqlConnection conn, SqlTransaction tx,
-            int idDocente, int idCarrera, bool esPrincipal)
-        {
-            using var cmd = new SqlCommand(@"
-                INSERT INTO DocenteCarrera (id_docente, id_carrera, es_principal)
-                VALUES (@idDocente, @idCarrera, @esPrincipal);", conn, tx);
-
-            cmd.Parameters.AddWithValue("@idDocente", idDocente);
-            cmd.Parameters.AddWithValue("@idCarrera", idCarrera);
-            cmd.Parameters.AddWithValue("@esPrincipal", esPrincipal);
-            cmd.ExecuteNonQuery();
-        }
-
-        private static void InsertarDocenteMateria(SqlConnection conn, SqlTransaction tx,
-            int idDocente, int idMateria)
-        {
-            using var cmd = new SqlCommand(@"
-                INSERT INTO DocenteMateria (id_docente, id_materia)
-                VALUES (@idDocente, @idMateria);", conn, tx);
-
-            cmd.Parameters.AddWithValue("@idDocente", idDocente);
-            cmd.Parameters.AddWithValue("@idMateria", idMateria);
-            cmd.ExecuteNonQuery();
-        }
-
-        private static void InsertarDisponibilidad(SqlConnection conn, SqlTransaction tx,
-            int idDocente, int idDia, int idBloque)
-        {
-            using var cmd = new SqlCommand(@"
-                INSERT INTO DisponibilidadDocente (id_docente, id_dia, id_bloque)
-                VALUES (@idDocente, @idDia, @idBloque);", conn, tx);
-
-            cmd.Parameters.AddWithValue("@idDocente", idDocente);
-            cmd.Parameters.AddWithValue("@idDia", idDia);
-            cmd.Parameters.AddWithValue("@idBloque", idBloque);
-            cmd.ExecuteNonQuery();
-        }
-
-        // Devuelve lista de (id_dia, id_bloque) según las celdas seleccionadas en el Canvas
         private List<(int idDia, int idBloque)> ObtenerDisponibilidadSeleccionada()
         {
             var resultado = new List<(int, int)>();
@@ -286,7 +303,6 @@ namespace GestorHorarios.DOCENTES
             {
                 if (!diasMap.TryGetValue(dia, out int idDia)) continue;
 
-                // Ahora recorremos la lista de cuadros individuales (HashSet)
                 foreach (var horaIdx in _horarioSeleccionado[dia])
                 {
                     if (horaIdx < bloques.Count)
@@ -296,23 +312,16 @@ namespace GestorHorarios.DOCENTES
             return resultado;
         }
 
-        // Carga los id_bloque de BD en orden para mapear índice de Canvas → id real
-        private static List<int> CargarBloques()
+        private List<int> CargarBloques()
         {
-            var bloques = new List<int>();
             try
             {
-                using var conn = new SqlConnection(DatabaseService.GetConnectionString());
-                using var cmd = new SqlCommand(
-                    "SELECT id_bloque FROM BloquesHora ORDER BY hora_inicio", conn);
-                conn.Open();
-                using var reader = cmd.ExecuteReader();
-                while (reader.Read())
-                    bloques.Add(Convert.ToInt32(reader["id_bloque"]));
+                return _docenteRepository.CargarBloquesIds();
             }
-            catch { /* si falla, la disponibilidad simplemente no se guarda */ }
-
-            return bloques;
+            catch
+            {
+                return new List<int>();
+            }
         }
         #endregion
 
@@ -325,13 +334,13 @@ namespace GestorHorarios.DOCENTES
             BotonAgregarDocente.Content = "Cerrar";
             BotonGuardarDocente.Content = "ACTUALIZAR";
 
-            // Preseleccionar la carrera principal del docente
             _idCarrera = docente.IdCarreraPrincipal;
 
             CargarCarrerasYMaterias();
             GenerarFilasHorario();
 
-            // Datos básicos
+            RbHFGCicloA.IsChecked = _calcularCicloAGlobal;
+            RbHFGCicloB.IsChecked = !_calcularCicloAGlobal;
             TextboxNombre.Text = docente.NombreCompleto;
             TextboxHorasMaximas.Text = docente.HorasMaximas.ToString();
             TextboxHFG.Text = docente.HorasFrenteGrupo.ToString();
@@ -340,37 +349,82 @@ namespace GestorHorarios.DOCENTES
                 if (cbItem.Content?.ToString() == docente.TipoTiempo)
                 { ComboBoxTipoTiempo.SelectedItem = cbItem; break; }
 
-            // Marcar carreras secundarias
             foreach (var cb in StackPanelCarrerasSecundarias.Children.OfType<CheckBox>())
                 if (cb.Tag is int idCb && docente.CarrerasSecundariasIds.Contains(idCb))
                     cb.IsChecked = true;
 
-            // Marcar materias ya seleccionadas
-            MarcarMateriasEnPaneles(docente.MateriasIds);
+            CargarMateriasYGruposParaEdicion(docente.IdDocente);
 
-            // Restaurar horario en el Canvas directamente desde BD
             RestaurarHorarioEnCanvas(docente.IdDocente);
 
             PanelFormularioDocente.BringIntoView();
         }
 
-        private void MarcarMateriasEnPaneles(List<int> ids)
+        private void CargarMateriasYGruposParaEdicion(int idDocente)
         {
-            // Función recursiva para encontrar y marcar CheckBoxes en modo Edición
-            void Marcar(UIElementCollection children)
+            _materiasEnTabla.Clear();
+            var dictMaterias = new Dictionary<int, MateriaTablaDto>();
+
+            var registros = _docenteRepository.ObtenerMateriasYGruposParaEdicion(idDocente);
+
+            foreach (var reg in registros)
             {
-                foreach (UIElement element in children)
+                int idMat = reg.IdMateria;
+                int? idGrup = reg.IdGrupo;
+                bool enLinea = reg.EnLinea;
+                string nombreGrup = reg.NombreGrupo;
+                bool esEspecial = reg.EsEspecial;
+
+                if (!dictMaterias.ContainsKey(idMat))
                 {
-                    if (element is CheckBox cb && cb.Tag is int id && ids.Contains(id))
-                        cb.IsChecked = true;
-                    else if (element is Panel panel)
-                        Marcar(panel.Children);
-                    else if (element is Border border && border.Child is Panel childPanel)
-                        Marcar(childPanel.Children);
+                    if (_todasLasMateriasInfo.TryGetValue(idMat, out var info))
+                    {
+                        var nuevaMat = new MateriaTablaDto
+                        {
+                            IdMateria = info.IdMateria,
+                            Nombre = info.Nombre,
+                            CarreraAsociada = info.CarreraAsociada,
+                            Creditos = info.Creditos,
+                            Semestre = info.Semestre,
+                            IdCarrera = info.IdCarrera,
+                            GruposSeleccionados = new List<GrupoSeleccionado>()
+                        };
+                        dictMaterias[idMat] = nuevaMat;
+                        _materiasEnTabla.Add(nuevaMat);
+
+                        MarcarCheckboxMateriaVisual(StackPanelMateriasImpartidas.Children, idMat);
+                    }
+                }
+
+                if (idGrup.HasValue && dictMaterias.TryGetValue(idMat, out var matDto))
+                {
+                    matDto.GruposSeleccionados.Add(new GrupoSeleccionado
+                    {
+                        IdGrupo = idGrup.Value,
+                        Nombre = nombreGrup,
+                        EnLinea = enLinea,
+                        EsEspecial = esEspecial
+                    });
                 }
             }
 
-            Marcar(StackPanelMateriasImpartidas.Children);
+            foreach (var mat in _materiasEnTabla) { mat.NotificarCambiosUI(); }
+            ActualizarTotalHFG();
+        }
+
+        private void MarcarCheckboxMateriaVisual(UIElementCollection children, int idMateria)
+        {
+            foreach (UIElement element in children)
+            {
+                if (element is CheckBox cb && cb.Tag is int id && id == idMateria)
+                {
+                    cb.Checked -= MateriaCb_Changed;
+                    cb.IsChecked = true;
+                    cb.Checked += MateriaCb_Changed;
+                }
+                else if (element is Panel panel) MarcarCheckboxMateriaVisual(panel.Children, idMateria);
+                else if (element is Border border && border.Child is Panel childPanel) MarcarCheckboxMateriaVisual(childPanel.Children, idMateria);
+            }
         }
 
         private void RestaurarHorarioEnCanvas(int idDocente)
@@ -386,31 +440,27 @@ namespace GestorHorarios.DOCENTES
             for (int i = 0; i < bloquesOrdenados.Count; i++)
                 bloqueAIndice[bloquesOrdenados[i]] = i;
 
-            var disponibilidad = new List<(int idDia, int idBloque)>();
+            List<(int IdDia, int IdBloque)> disponibilidad;
             try
             {
-                using var conn = new SqlConnection(DatabaseService.GetConnectionString());
-                using var cmd = new SqlCommand("SELECT id_dia, id_bloque FROM DisponibilidadDocente WHERE id_docente=@id ORDER BY id_dia, id_bloque", conn);
-                cmd.Parameters.AddWithValue("@id", idDocente);
-                conn.Open();
-                using var reader = cmd.ExecuteReader();
-                while (reader.Read())
-                    disponibilidad.Add((Convert.ToInt32(reader["id_dia"]), Convert.ToInt32(reader["id_bloque"])));
+                disponibilidad = _docenteRepository.ObtenerDisponibilidad(idDocente);
             }
-            catch { return; }
+            catch
+            {
+                return;
+            }
 
             if (disponibilidad.Count == 0) return;
 
-            var porDia = disponibilidad.GroupBy(x => x.idDia).Where(g => diasMap.ContainsKey(g.Key));
+            var porDia = disponibilidad.GroupBy(x => x.IdDia).Where(g => diasMap.ContainsKey(g.Key));
 
             foreach (var grupo in porDia)
             {
                 var dia = diasMap[grupo.Key];
                 var indices = grupo
-                    .Where(x => bloqueAIndice.ContainsKey(x.idBloque))
-                    .Select(x => bloqueAIndice[x.idBloque]);
+                    .Where(x => bloqueAIndice.ContainsKey(x.IdBloque))
+                    .Select(x => bloqueAIndice[x.IdBloque]);
 
-                // Guardamos los cuadros individuales encontrados en la base de datos
                 _horarioSeleccionado[dia] = new HashSet<int>(indices);
 
                 int diaIdx = Array.IndexOf(DIAS, dia);
@@ -419,6 +469,37 @@ namespace GestorHorarios.DOCENTES
             }
 
             ActualizarContadorHoras();
+        }
+
+        private void ActualizarDocenteEnBD(int idDocente)
+        {
+            var nombre = TextboxNombre.Text.Trim();
+            var tipoDocente = (ComboBoxTipoTiempo.SelectedItem as ComboBoxItem)?.Content?.ToString() ?? "TIEMPO COMPLETO";
+            int horasMaximas = int.TryParse(TextboxHorasMaximas.Text, out int hm) ? hm : 20;
+            int horasFrenteGrupo = int.TryParse(TextboxHFG.Text, out int hfg) ? hfg : 0;
+
+            int idCarreraPrincipal = _idCarrera;
+            if (ComboBoxCarreraPrincipal.SelectedItem is ComboBoxItem cbItem && cbItem.Tag is int idTag)
+                idCarreraPrincipal = idTag;
+
+            var idCarrerasSecundarias = new List<int>();
+            foreach (var cb in StackPanelCarrerasSecundarias.Children.OfType<CheckBox>())
+                if (cb.IsChecked == true && cb.Tag is int idSec)
+                    idCarrerasSecundarias.Add(idSec);
+
+            var asignaciones = ConstruirAsignacionesMateriaGrupo();
+            var disponibilidad = ObtenerDisponibilidadSeleccionada();
+
+            _docenteRepository.Actualizar(
+                idDocente,
+                nombre,
+                tipoDocente,
+                horasMaximas,
+                horasFrenteGrupo,
+                idCarreraPrincipal,
+                idCarrerasSecundarias,
+                asignaciones,
+                disponibilidad);
         }
         #endregion
 
@@ -505,19 +586,9 @@ namespace GestorHorarios.DOCENTES
 
             try
             {
-                using var conn = new SqlConnection(DatabaseService.GetConnectionString());
-                using var cmd = new SqlCommand(
-                    "SELECT id_carrera, nombre FROM Carreras ORDER BY nombre", conn);
-                conn.Open();
-                using var reader = cmd.ExecuteReader();
-
-                while (reader.Read())
+                var carreras = _carreraRepository.ObtenerTodas();
+                foreach (var carrera in carreras)
                 {
-                    var carrera = new Carrera
-                    {
-                        IdCarrera = Convert.ToInt32(reader["id_carrera"]),
-                        Nombre = reader["nombre"].ToString() ?? ""
-                    };
                     _carrerasDisponibles.Add(carrera);
 
                     var item = new ComboBoxItem
@@ -531,14 +602,12 @@ namespace GestorHorarios.DOCENTES
             }
             catch (Exception ex)
             {
-                MostrarMensajeError($"Error cargando carreras: {ex.Message}");
+                MessageBox.Show($"Error cargando carreras: {ex.Message}");
             }
 
-            // Suscribir ANTES de asignar SelectedItem para que dispare al preseleccionar
             ComboBoxCarreraPrincipal.SelectionChanged -= ComboBoxCarreraPrincipal_SelectionChanged;
             ComboBoxCarreraPrincipal.SelectionChanged += ComboBoxCarreraPrincipal_SelectionChanged;
 
-            // Preseleccionar la carrera principal del constructor — esto disparará el evento
             foreach (ComboBoxItem item in ComboBoxCarreraPrincipal.Items)
             {
                 if (item.Tag is int id && id == _idCarrera)
@@ -560,7 +629,7 @@ namespace GestorHorarios.DOCENTES
                 Tag = carrera.IdCarrera,
                 Margin = new Thickness(10, 0, 10, 0),
                 VerticalAlignment = VerticalAlignment.Center,
-                IsEnabled = true  // Se gestiona dinámicamente en ActualizarCheckBoxesSecundarias
+                IsEnabled = true
             };
 
             checkBox.Checked += (_, _) => AddSecondaryPanel(carrera);
@@ -586,7 +655,6 @@ namespace GestorHorarios.DOCENTES
             _mainMateriasPanel = BuildMateriasPanelForCareer(idSeleccionada,
                 item.Content.ToString() ?? "", isMain: true);
             StackPanelMateriasImpartidas.Children.Add(_mainMateriasPanel);
-            ActualizarResumenMaterias();
         }
 
         private void ActualizarCheckBoxesSecundarias(int idCarreraSeleccionada)
@@ -610,7 +678,6 @@ namespace GestorHorarios.DOCENTES
 
         private UIElement BuildMateriasPanelForCareer(int idCarrera, string nombreCarrera, bool isMain)
         {
-            // Contenedor principal de toda la carrera
             var mainBorder = new Border
             {
                 Background = Brushes.White,
@@ -618,19 +685,17 @@ namespace GestorHorarios.DOCENTES
                 BorderThickness = new Thickness(1),
                 CornerRadius = new CornerRadius(8),
                 Margin = new Thickness(0, 10, 0, 15),
-                Tag = idCarrera // Importante para la lógica interna
+                Tag = idCarrera
             };
 
             var mainStack = new StackPanel();
 
-            // 1. Cabecera con color de la Carrera (AHORA ES CLICKEABLE)
             var headerBorder = new Border
             {
-                // Rosa bajito si es principal, gris claro si es secundaria
                 Background = new SolidColorBrush((Color)ColorConverter.ConvertFromString(isMain ? "#FCE4EC" : "#F5F5F5")),
                 CornerRadius = new CornerRadius(7, 7, 0, 0),
                 Padding = new Thickness(15, 10, 15, 10),
-                Cursor = Cursors.Hand // Cursor de manito para indicar que se puede hacer clic
+                Cursor = Cursors.Hand
             };
 
             var headerGrid = new Grid();
@@ -647,7 +712,6 @@ namespace GestorHorarios.DOCENTES
             };
             Grid.SetColumn(titleText, 0);
 
-            // Icono de flecha (▼ expandido, ► colapsado)
             var toggleIcon = new TextBlock
             {
                 Text = isMain ? "▼" : "►",
@@ -663,85 +727,122 @@ namespace GestorHorarios.DOCENTES
             headerBorder.Child = headerGrid;
             mainStack.Children.Add(headerBorder);
 
-            // 2. Contenedor de los Semestres (AHORA TIENE VISIBILIDAD DINÁMICA)
             var contentStack = new StackPanel
             {
                 Margin = new Thickness(15),
-                // La principal empieza abierta, las secundarias empiezan cerradas para ahorrar espacio
                 Visibility = isMain ? Visibility.Visible : Visibility.Collapsed
             };
 
-            // LÓGICA DEL ACORDEÓN: Expandir/colapsar al hacer clic en la cabecera
             headerBorder.MouseLeftButtonDown += (s, e) =>
             {
                 if (contentStack.Visibility == Visibility.Visible)
                 {
                     contentStack.Visibility = Visibility.Collapsed;
                     toggleIcon.Text = "►";
-                    headerBorder.CornerRadius = new CornerRadius(7); // Redondear abajo si está cerrado
+                    headerBorder.CornerRadius = new CornerRadius(7);
                 }
                 else
                 {
                     contentStack.Visibility = Visibility.Visible;
                     toggleIcon.Text = "▼";
-                    headerBorder.CornerRadius = new CornerRadius(7, 7, 0, 0); // Cuadrado abajo si está abierto
+                    headerBorder.CornerRadius = new CornerRadius(7, 7, 0, 0);
                 }
             };
 
             try
             {
                 var materias = CargarMateriasDeBD(idCarrera);
-                var porSemestre = materias.GroupBy(m => m.Semestre).OrderBy(g => g.Key);
 
-                foreach (var grupo in porSemestre)
+                // SEPARAMOS LAS MATERIAS EN DOS LISTAS
+                var materiasCicloB = materias.Where(m => m.Semestre % 2 != 0).ToList();
+                var materiasCicloA = materias.Where(m => m.Semestre % 2 == 0).ToList();
+
+                // FUNCIÓN INTERNA PARA DIBUJAR UN CICLO COMPLETO SIN DESALINEAR LOS BOTONES
+                Action<string, string, string, List<Materia>> ConstruirCiclo = (titulo, bgHex, fgHex, listaMaterias) =>
                 {
-                    // Tarjeta individual para aislar visualmente cada semestre
-                    var semesterBorder = new Border
+                    if (!listaMaterias.Any()) return;
+
+                    // 1. Dibujar el Encabezado del Ciclo
+                    var headerCiclo = new Border
                     {
-                        Background = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#FAFAFA")),
-                        BorderBrush = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#EEEEEE")),
-                        BorderThickness = new Thickness(1),
+                        Background = new SolidColorBrush((Color)ColorConverter.ConvertFromString(bgHex)),
                         CornerRadius = new CornerRadius(6),
-                        Margin = new Thickness(0, 0, 0, 12),
-                        Padding = new Thickness(12)
-                    };
-
-                    var semesterStack = new StackPanel();
-
-                    semesterStack.Children.Add(new TextBlock
-                    {
-                        Text = $"Semestre {grupo.Key}",
-                        FontSize = 13,
-                        FontWeight = FontWeights.SemiBold,
-                        Foreground = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#444444")),
-                        Margin = new Thickness(0, 0, 0, 8)
-                    });
-
-                    // WRAPPANEL: La magia para que las cajas bajen de renglón automáticamente
-                    var panelMaterias = new WrapPanel { Orientation = Orientation.Horizontal };
-
-                    foreach (var materia in grupo)
-                    {
-                        var cb = new CheckBox
+                        Padding = new Thickness(12, 8, 12, 8),
+                        Margin = new Thickness(0, 10, 0, 10),
+                        Child = new TextBlock
                         {
-                            Content = materia.Nombre,
-                            Tag = materia.IdMateria,
-                            Margin = new Thickness(0, 0, 15, 8),
-                            FontSize = 12,
-                            Foreground = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#555555")),
-                            Cursor = Cursors.Hand
+                            Text = titulo,
+                            FontSize = 14,
+                            FontWeight = FontWeights.Bold,
+                            Foreground = new SolidColorBrush((Color)ColorConverter.ConvertFromString(fgHex))
+                        }
+                    };
+                    contentStack.Children.Add(headerCiclo);
+
+                    // 2. Agrupar las materias de este ciclo por semestre y dibujarlas (ESTRUCTURA ORIGINAL INTACTA)
+                    var porSemestre = listaMaterias.GroupBy(m => m.Semestre).OrderBy(g => g.Key);
+
+                    foreach (var grupo in porSemestre)
+                    {
+                        var semesterBorder = new Border
+                        {
+                            Background = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#FAFAFA")),
+                            BorderBrush = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#EEEEEE")),
+                            BorderThickness = new Thickness(1),
+                            CornerRadius = new CornerRadius(6),
+                            Margin = new Thickness(0, 0, 0, 12),
+                            Padding = new Thickness(12)
                         };
-                        cb.Checked += MateriaCb_Changed;
-                        cb.Unchecked += MateriaCb_Changed;
-                        panelMaterias.Children.Add(cb);
 
-                        _todasLasMaterias[materia.IdMateria] = materia.Nombre;
+                        var semesterStack = new StackPanel();
+
+                        semesterStack.Children.Add(new TextBlock
+                        {
+                            Text = $"Semestre {grupo.Key}",
+                            FontSize = 13,
+                            FontWeight = FontWeights.SemiBold,
+                            Foreground = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#444444")),
+                            Margin = new Thickness(0, 0, 0, 8)
+                        });
+
+                        var panelMaterias = new WrapPanel { Orientation = Orientation.Horizontal };
+
+                        foreach (var materia in grupo)
+                        {
+                            var cb = new CheckBox
+                            {
+                                Content = materia.Nombre,
+                                Tag = materia.IdMateria,
+                                Margin = new Thickness(0, 0, 15, 8),
+                                FontSize = 12,
+                                Foreground = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#555555")),
+                                Cursor = Cursors.Hand
+                            };
+                            cb.Checked += MateriaCb_Changed;
+                            cb.Unchecked += MateriaCb_Changed;
+                            panelMaterias.Children.Add(cb);
+
+                            // AQUI SE GUARDA LA INFO COMPLETA PARA EL DATAGRID
+                            _todasLasMateriasInfo[materia.IdMateria] = new MateriaTablaDto
+                            {
+                                IdMateria = materia.IdMateria,
+                                Nombre = materia.Nombre,
+                                CarreraAsociada = nombreCarrera,
+                                Creditos = materia.Creditos,
+                                Semestre = materia.Semestre,
+                                IdCarrera = idCarrera
+                            };
+                        }
+
+                        semesterStack.Children.Add(panelMaterias);
+                        semesterBorder.Child = semesterStack;
+                        contentStack.Children.Add(semesterBorder);
                     }
+                };
 
-                    semesterStack.Children.Add(panelMaterias);
-                    semesterBorder.Child = semesterStack;
-                    contentStack.Children.Add(semesterBorder);
-                }
+                // DIBUJAMOS LOS DOS CICLOS (B va primero por orden de semestres impares)
+                ConstruirCiclo("🗓️ CICLO B ", "#E8F5E9", "#2E7D32", materiasCicloB);
+                ConstruirCiclo("🗓️ CICLO A ", "#E3F2FD", "#1565C0", materiasCicloA);
 
                 if (!materias.Any())
                 {
@@ -770,33 +871,10 @@ namespace GestorHorarios.DOCENTES
             return mainBorder;
         }
 
-        private static List<Materia> CargarMateriasDeBD(int idCarrera)
+        private List<Materia> CargarMateriasDeBD(int idCarrera)
         {
-            var lista = new List<Materia>();
-            using var conn = new SqlConnection(DatabaseService.GetConnectionString());
-            using var cmd = new SqlCommand("sp_ObtenerMateriasPorCarrera", conn)
-            {
-                CommandType = CommandType.StoredProcedure
-            };
-            cmd.Parameters.AddWithValue("@id_carrera", idCarrera);
-            conn.Open();
-            using var reader = cmd.ExecuteReader();
-            while (reader.Read())
-            {
-                lista.Add(new Materia
-                {
-                    IdMateria = Convert.ToInt32(reader["id_materia"]),
-                    Nombre = reader["nombre"].ToString() ?? "",
-                    Clave = reader["clave"].ToString() ?? "",
-                    Creditos = Convert.ToInt32(reader["creditos"]),
-                    Semestre = Convert.ToInt32(reader["semestre"])
-                });
-            }
-            return lista;
+            return _materiaRepository.ObtenerPorCarrera(idCarrera);
         }
-
-        private void MateriaCb_Changed(object sender, RoutedEventArgs e) =>
-            ActualizarResumenMaterias();
 
         private void AddSecondaryPanel(Carrera carrera)
         {
@@ -805,7 +883,6 @@ namespace GestorHorarios.DOCENTES
             var panel = BuildMateriasPanelForCareer(carrera.IdCarrera, carrera.Nombre, isMain: false);
             _secondaryPanels[carrera.IdCarrera.ToString()] = panel;
             StackPanelMateriasImpartidas.Children.Add(panel);
-            ActualizarResumenMaterias();
         }
 
         private void RemoveSecondaryPanel(int idCarrera)
@@ -815,7 +892,14 @@ namespace GestorHorarios.DOCENTES
 
             StackPanelMateriasImpartidas.Children.Remove(panel);
             _secondaryPanels.Remove(key);
-            ActualizarResumenMaterias();
+
+            // Eliminar de la tabla las materias que pertenecian a esta carrera secundaria
+            var materiasABorrar = _materiasEnTabla.Where(m => m.IdCarrera == idCarrera).ToList();
+            foreach (var mat in materiasABorrar)
+            {
+                _materiasEnTabla.Remove(mat);
+            }
+            ActualizarTotalHFG();
         }
 
         private void ClearMateriasPanels()
@@ -823,45 +907,199 @@ namespace GestorHorarios.DOCENTES
             StackPanelMateriasImpartidas.Children.Clear();
             _secondaryPanels.Clear();
             _mainMateriasPanel = null;
-            ActualizarResumenMaterias();
+            _materiasEnTabla.Clear();
+            ActualizarTotalHFG();
         }
         #endregion
 
-        #region Resumen de materias seleccionadas
-        private void ActualizarResumenMaterias()
+        #region Lógica del DataGrid y HFG (FASE 3)
+        private void MateriaCb_Changed(object sender, RoutedEventArgs e)
         {
-            _materiasSeleccionadasIds.Clear();
+            if (sender is not CheckBox cb || cb.Tag is not int idMateria) return;
 
-            // Función recursiva para encontrar todos los CheckBoxes marcados
-            void ExtraerIds(UIElementCollection children)
+            if (cb.IsChecked == true)
             {
-                foreach (UIElement element in children)
+                if (_todasLasMateriasInfo.TryGetValue(idMateria, out var info) && !_materiasEnTabla.Contains(info))
                 {
-                    if (element is CheckBox cb && cb.IsChecked == true && cb.Tag is int idMateria)
-                        _materiasSeleccionadasIds.Add(idMateria);
-                    else if (element is Panel panel)
-                        ExtraerIds(panel.Children);
-                    else if (element is Border border && border.Child is Panel childPanel)
-                        ExtraerIds(childPanel.Children);
+                    _materiasEnTabla.Add(info);
+                }
+            }
+            else
+            {
+                var item = _materiasEnTabla.FirstOrDefault(m => m.IdMateria == idMateria);
+                if (item != null)
+                {
+                    // Al quitarla, limpiamos sus grupos para que no queden fantasmas en el contador
+                    item.GruposSeleccionados.Clear();
+                    item.NotificarCambiosUI();
+                    _materiasEnTabla.Remove(item);
+                }
+            }
+            ActualizarTotalHFG();
+        }
+
+        private void FiltroHFG_Changed(object sender, RoutedEventArgs e)
+        {
+            if (!IsLoaded || RbHFGCicloA == null) return;
+
+            // Actualizamos la variable y la guardamos en SQL Server
+            _calcularCicloAGlobal = RbHFGCicloA.IsChecked == true;
+            _docenteRepository.GuardarPreferenciaCiclo(_calcularCicloAGlobal);
+
+            ActualizarTotalHFG();
+        }
+
+        private void ActualizarTotalHFG()
+        {
+            if (RbHFGCicloA == null) return;
+
+            int totalHFG = 0;
+
+            foreach (var materia in _materiasEnTabla)
+            {
+                bool esSemestrePar = materia.Semestre % 2 == 0;
+
+                foreach (var g in materia.GruposSeleccionados)
+                {
+                    // Utilizamos la variable global _calcularCicloAGlobal para la validación
+                    if (g.EsEspecial || (_calcularCicloAGlobal && esSemestrePar) || (!_calcularCicloAGlobal && !esSemestrePar))
+                    {
+                        totalHFG += materia.Creditos;
+                    }
                 }
             }
 
-            ExtraerIds(StackPanelMateriasImpartidas.Children);
+            TextboxHFG.Text = totalHFG.ToString();
+        }
+        #endregion
 
-            if (_materiasSeleccionadasIds.Count == 0)
+        #region Modal de Selección de Grupos (FASE 3)
+        private void AbrirModalGrupos_Click(object sender, RoutedEventArgs e)
+        {
+            if (sender is Button btn && btn.DataContext is MateriaTablaDto materia)
             {
-                TextblockMateriasSeleccionadas.Text = "(Ninguna seleccionada)";
-                TextboxHorasDiarias.Text = "0";
-                return;
+                _materiaEditandoGrupos = materia;
+                TxtModalMateriaNombre.Text = materia.NombreMostrar;
+                PanelCheckboxesGrupos.Children.Clear();
+
+                try
+                {
+                    var gruposDisponibles = _grupoRepository.ObtenerGruposParaMateria(
+                        materia.IdCarrera, materia.Semestre, materia.IdMateria);
+
+                    bool hayGrupos = false;
+                    int idDocenteActual = _docenteEnEdicion != null ? _docenteEnEdicion.IdDocente : -1;
+
+                    foreach (var g in gruposDisponibles)
+                    {
+                        hayGrupos = true;
+                        int idGrupo = g.IdGrupo;
+                        string nombreGrupo = g.NombreGrupo;
+                        string turno = g.Turno;
+                        bool esEspecial = g.EsEspecial;
+                        string textoEspecial = esEspecial ? " [ESPECIAL]" : "";
+
+                        int? idDocenteAsignado = g.IdDocenteAsignado;
+                        string nombreDocenteAsignado = g.NombreDocenteAsignado;
+
+                        bool ocupadoPorOtro = idDocenteAsignado.HasValue && idDocenteAsignado.Value != idDocenteActual;
+
+                        var tbPresencial = new TextBlock { Text = $"{nombreGrupo} ({turno}){textoEspecial} — Presencial" };
+                        var tbLinea = new TextBlock { Text = $"{nombreGrupo} ({turno}){textoEspecial} — En Línea" };
+
+                        if (ocupadoPorOtro)
+                        {
+                            string textoOcupado = $" (Asignado a: {nombreDocenteAsignado})";
+
+                            tbPresencial.Text += textoOcupado;
+                            tbPresencial.TextDecorations = TextDecorations.Strikethrough;
+                            tbPresencial.Foreground = Brushes.Gray;
+
+                            tbLinea.Text += textoOcupado;
+                            tbLinea.TextDecorations = TextDecorations.Strikethrough;
+                            tbLinea.Foreground = Brushes.Gray;
+                        }
+                        else
+                        {
+                            tbLinea.Foreground = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#E65100"));
+                        }
+
+                        var cbPresencial = new CheckBox
+                        {
+                            Content = tbPresencial,
+                            Tag = new GrupoSeleccionado { IdGrupo = idGrupo, Nombre = nombreGrupo, EnLinea = false, EsEspecial = esEspecial },
+                            Margin = new Thickness(0, 0, 0, 5),
+                            FontSize = 14,
+                            Cursor = Cursors.Hand,
+                            IsEnabled = !ocupadoPorOtro
+                        };
+
+                        var cbLinea = new CheckBox
+                        {
+                            Content = tbLinea,
+                            Tag = new GrupoSeleccionado { IdGrupo = idGrupo, Nombre = nombreGrupo, EnLinea = true, EsEspecial = esEspecial },
+                            Margin = new Thickness(0, 0, 0, 15),
+                            FontSize = 14,
+                            Cursor = Cursors.Hand,
+                            IsEnabled = !ocupadoPorOtro
+                        };
+
+                        var grupoAsignado = materia.GruposSeleccionados.FirstOrDefault(gr => gr.IdGrupo == idGrupo);
+                        if (grupoAsignado != null)
+                        {
+                            if (grupoAsignado.EnLinea) cbLinea.IsChecked = true;
+                            else cbPresencial.IsChecked = true;
+                        }
+
+                        PanelCheckboxesGrupos.Children.Add(cbPresencial);
+                        PanelCheckboxesGrupos.Children.Add(cbLinea);
+                    }
+
+                    if (!hayGrupos)
+                    {
+                        PanelCheckboxesGrupos.Children.Add(new TextBlock
+                        {
+                            Text = "No hay grupos registrados para este semestre y carrera en el sistema.",
+                            Foreground = Brushes.Gray,
+                            FontStyle = FontStyles.Italic
+                        });
+                    }
+                }
+                catch (Exception ex)
+                {
+                    MessageBox.Show($"Error al cargar grupos: {ex.Message}");
+                }
+
+                ModalSeleccionGrupos.Visibility = Visibility.Visible;
+            }
+        }
+
+        private void AceptarGrupos_Click(object sender, RoutedEventArgs e)
+        {
+            if (_materiaEditandoGrupos != null)
+            {
+                var nuevosGrupos = new List<GrupoSeleccionado>();
+
+                foreach (var child in PanelCheckboxesGrupos.Children)
+                {
+                    if (child is CheckBox cb && cb.IsChecked == true && cb.Tag is GrupoSeleccionado grupo)
+                    {
+                        nuevosGrupos.Add(grupo);
+                    }
+                }
+
+                _materiaEditandoGrupos.GruposSeleccionados = nuevosGrupos;
+                ActualizarTotalHFG();
             }
 
-            var nombres = _materiasSeleccionadasIds
-                .Distinct()
-                .Where(id => _todasLasMaterias.ContainsKey(id))
-                .Select(id => _todasLasMaterias[id]);
+            ModalSeleccionGrupos.Visibility = Visibility.Collapsed;
+            _materiaEditandoGrupos = null;
+        }
 
-            TextblockMateriasSeleccionadas.Text = string.Join(", ", nombres);
-            TextboxHorasDiarias.Text = _materiasSeleccionadasIds.Distinct().Count().ToString();
+        private void CancelarGrupos_Click(object sender, RoutedEventArgs e)
+        {
+            ModalSeleccionGrupos.Visibility = Visibility.Collapsed;
+            _materiaEditandoGrupos = null;
         }
         #endregion
 
@@ -1147,60 +1385,20 @@ namespace GestorHorarios.DOCENTES
         private void LoadDocentes()
         {
             ListaDocentes.Children.Clear();
+            _docentesActuales.Clear();
 
             try
             {
-                using var conn = new SqlConnection(DatabaseService.GetConnectionString());
-                using var cmd = new SqlCommand("sp_GetDocentesByCarrera", conn)
-                {
-                    CommandType = CommandType.StoredProcedure
-                };
-                cmd.Parameters.AddWithValue("@id_carrera", _idCarrera);
-                conn.Open();
-
-                using var reader = cmd.ExecuteReader();
-                if (!reader.HasRows)
+                var docentes = _docenteRepository.ObtenerPorCarrera(_idCarrera);
+                if (docentes.Count == 0)
                 {
                     MostrarMensajeSinDatos();
                     return;
                 }
 
-                while (reader.Read())
+                foreach (var docente in docentes)
                 {
-                    // Lectura segura para la nueva variable HFG
-                    int hfg = 0;
-                    try
-                    {
-                        if (reader["horas_frente_grupo"] != DBNull.Value)
-                            hfg = Convert.ToInt32(reader["horas_frente_grupo"]);
-                    }
-                    catch { /* La columna no existe en el reader, se queda en 0 */ }
-
-                    var docente = new Docente
-                    {
-                        IdDocente = Convert.ToInt32(reader["id_docente"]),
-                        NombreCompleto = reader["NombreCompleto"] as string ?? "Sin nombre",
-                        TipoTiempo = reader["TipoTiempo"] as string ?? string.Empty,
-                        CarreraPrincipal = reader["CarreraPrincipal"] as string ?? string.Empty,
-                        CarreraSecundaria = reader["CarreraSecundaria"] as string ?? "Ninguna",
-                        Materias = reader["Materias"] as string ?? string.Empty,
-                        HorarioLaboral = reader["HorarioLaboral"] as string ?? string.Empty,
-                        HorasMaximas = reader["HorasMaximas"] != DBNull.Value
-                            ? Convert.ToInt32(reader["HorasMaximas"]) : 0,
-
-                        // ASIGNACIÓN DE LA NUEVA VARIABLE
-                        HorasFrenteGrupo = hfg,
-
-                        HorasAsignadas = reader["HorasAsignadas"] != DBNull.Value
-                            ? Convert.ToInt32(reader["HorasAsignadas"]) : 0,
-                        IdCarreraPrincipal = reader["IdCarreraPrincipal"] != DBNull.Value
-                            ? Convert.ToInt32(reader["IdCarreraPrincipal"]) : 0
-                    };
-
-                    // Cargar ids de materias y carreras secundarias
-                    docente.MateriasIds = CargarMateriasIdsDeDocente(docente.IdDocente);
-                    docente.CarrerasSecundariasIds = CargarCarrerasSecundariasIds(docente.IdDocente);
-
+                    _docentesActuales.Add(docente);
                     ListaDocentes.Children.Add(CrearCardDocente(docente));
                 }
             }
@@ -1209,6 +1407,7 @@ namespace GestorHorarios.DOCENTES
                 MostrarMensajeError($"Error al cargar docentes: {ex.Message}");
             }
         }
+
         private void MostrarMensajeSinDatos()
         {
             ListaDocentes.Children.Add(new TextBlock
@@ -1229,40 +1428,6 @@ namespace GestorHorarios.DOCENTES
                 Foreground = Brushes.Red,
                 Margin = new Thickness(10)
             });
-        }
-
-        private static List<int> CargarMateriasIdsDeDocente(int idDocente)
-        {
-            var lista = new List<int>();
-            try
-            {
-                using var conn = new SqlConnection(DatabaseService.GetConnectionString());
-                using var cmd = new SqlCommand(
-                    "SELECT id_materia FROM DocenteMateria WHERE id_docente=@id", conn);
-                cmd.Parameters.AddWithValue("@id", idDocente);
-                conn.Open();
-                using var r = cmd.ExecuteReader();
-                while (r.Read()) lista.Add(Convert.ToInt32(r["id_materia"]));
-            }
-            catch { }
-            return lista;
-        }
-
-        private static List<int> CargarCarrerasSecundariasIds(int idDocente)
-        {
-            var lista = new List<int>();
-            try
-            {
-                using var conn = new SqlConnection(DatabaseService.GetConnectionString());
-                using var cmd = new SqlCommand(
-                    "SELECT id_carrera FROM DocenteCarrera WHERE id_docente=@id AND es_principal=0", conn);
-                cmd.Parameters.AddWithValue("@id", idDocente);
-                conn.Open();
-                using var r = cmd.ExecuteReader();
-                while (r.Read()) lista.Add(Convert.ToInt32(r["id_carrera"]));
-            }
-            catch { }
-            return lista;
         }
         #endregion
 
@@ -1373,8 +1538,6 @@ namespace GestorHorarios.DOCENTES
             return stack;
         }
 
-        // "Lunes 7:30-8:30, Lunes 8:30-9:30, Martes 9:30-11:30" → tabla visual agrupada por día
-        // "Lunes 7:30-8:30, Martes 9:30-11:30" → tabla visual agrupada por día
         private static Border CrearTablaHorario(string horarioLaboral)
         {
             var sp = new StackPanel { Margin = new Thickness(0, 4, 0, 0) };
@@ -1398,12 +1561,10 @@ namespace GestorHorarios.DOCENTES
                 var dia = t[..espacio];
                 var rango = t[(espacio + 1)..];
 
-                // Ya no forzamos nada, lo guardamos exactamente como viene de la Base de Datos
                 if (!porDia.ContainsKey(dia)) porDia[dia] = new List<string>();
                 porDia[dia].Add(rango);
             }
 
-            // BUSCAMOS DIRECTAMENTE "Miercoles" SIN ACENTO PARA QUE HAGA MATCH CON LA BD
             var diasOrden = new[] { "Lunes", "Martes", "Miercoles", "Jueves", "Viernes" };
             var coloresDia = new[] { "#FFE0B2", "#C8E6C9", "#BBDEFB", "#F8BBD0", "#FFE0B2" };
 
@@ -1430,7 +1591,6 @@ namespace GestorHorarios.DOCENTES
                 rowGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
                 rowGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
 
-                // Al mostrarlo en pantalla le ponemos el acento para que la interfaz se vea profesional
                 string nombreVisual = dia == "Miercoles" ? "Miércoles" : dia;
 
                 rowGrid.Children.Add(new TextBlock
@@ -1592,7 +1752,7 @@ namespace GestorHorarios.DOCENTES
 
             try
             {
-                EliminarDocenteDeBD(idDocente);
+                _docenteRepository.Eliminar(idDocente);
                 MessageBox.Show("Docente eliminado correctamente.",
                     "Éxito", MessageBoxButton.OK, MessageBoxImage.Information);
                 LoadDocentes();
@@ -1601,95 +1761,6 @@ namespace GestorHorarios.DOCENTES
             {
                 MessageBox.Show($"Error al eliminar: {ex.Message}",
                     "Error", MessageBoxButton.OK, MessageBoxImage.Error);
-            }
-        }
-
-        private static void EliminarDocenteDeBD(int idDocente)
-        {
-            using var conn = new SqlConnection(DatabaseService.GetConnectionString());
-            conn.Open();
-            using var tx = conn.BeginTransaction();
-            try
-            {
-                // Borrar en cascada manual (relaciones sin CASCADE en BD)
-                EjecutarDelete(conn, tx, "DELETE FROM DisponibilidadDocente WHERE id_docente=@id", idDocente);
-                EjecutarDelete(conn, tx, "DELETE FROM DocenteMateria WHERE id_docente=@id", idDocente);
-                EjecutarDelete(conn, tx, "DELETE FROM DocenteCarrera WHERE id_docente=@id", idDocente);
-                EjecutarDelete(conn, tx, "DELETE FROM Docentes WHERE id_docente=@id", idDocente);
-                tx.Commit();
-            }
-            catch
-            {
-                tx.Rollback();
-                throw;
-            }
-        }
-
-        private static void EjecutarDelete(SqlConnection conn, SqlTransaction tx, string sql, int id)
-        {
-            using var cmd = new SqlCommand(sql, conn, tx);
-            cmd.Parameters.AddWithValue("@id", id);
-            cmd.ExecuteNonQuery();
-        }
-
-        // UPDATE: borra relaciones antiguas y reinserta las nuevas
-        private void ActualizarDocenteEnBD(int idDocente)
-        {
-            var nombre = TextboxNombre.Text.Trim();
-            var tipoDocente = (ComboBoxTipoTiempo.SelectedItem as ComboBoxItem)?.Content?.ToString() ?? "TIEMPO COMPLETO";
-            int horasMaximas = int.TryParse(TextboxHorasMaximas.Text, out int hm) ? hm : 20;
-            // Capturamos el HFG
-            int horasFrenteGrupo = int.TryParse(TextboxHFG.Text, out int hfg) ? hfg : 0;
-
-            int idCarreraPrincipal = _idCarrera;
-            if (ComboBoxCarreraPrincipal.SelectedItem is ComboBoxItem cbItem && cbItem.Tag is int idTag)
-                idCarreraPrincipal = idTag;
-
-            var idCarrerasSecundarias = new List<int>();
-            foreach (var cb in StackPanelCarrerasSecundarias.Children.OfType<CheckBox>())
-                if (cb.IsChecked == true && cb.Tag is int idSec)
-                    idCarrerasSecundarias.Add(idSec);
-
-            var disponibilidad = ObtenerDisponibilidadSeleccionada();
-
-            using var conn = new SqlConnection(DatabaseService.GetConnectionString());
-            conn.Open();
-            using var tx = conn.BeginTransaction();
-            try
-            {
-                // Actualizar datos básicos (Agregamos horas_frente_grupo)
-                using (var cmd = new SqlCommand(@"
-                    UPDATE Docentes
-                    SET nombre=@nombre, tipo_docente=@tipo, horas_maximas=@horas, horas_frente_grupo=@hfg
-                    WHERE id_docente=@id", conn, tx))
-                {
-                    cmd.Parameters.AddWithValue("@nombre", nombre);
-                    cmd.Parameters.AddWithValue("@tipo", tipoDocente);
-                    cmd.Parameters.AddWithValue("@horas", horasMaximas);
-                    cmd.Parameters.AddWithValue("@hfg", horasFrenteGrupo);
-                    cmd.Parameters.AddWithValue("@id", idDocente);
-                    cmd.ExecuteNonQuery();
-                }
-
-                // Reemplazar relaciones
-                EjecutarDelete(conn, tx, "DELETE FROM DisponibilidadDocente WHERE id_docente=@id", idDocente);
-                EjecutarDelete(conn, tx, "DELETE FROM DocenteMateria WHERE id_docente=@id", idDocente);
-                EjecutarDelete(conn, tx, "DELETE FROM DocenteCarrera WHERE id_docente=@id", idDocente);
-
-                InsertarDocenteCarrera(conn, tx, idDocente, idCarreraPrincipal, esPrincipal: true);
-                foreach (var idSec in idCarrerasSecundarias)
-                    InsertarDocenteCarrera(conn, tx, idDocente, idSec, esPrincipal: false);
-                foreach (var idMateria in _materiasSeleccionadasIds.Distinct())
-                    InsertarDocenteMateria(conn, tx, idDocente, idMateria);
-                foreach (var (idDia, idBloque) in disponibilidad)
-                    InsertarDisponibilidad(conn, tx, idDocente, idDia, idBloque);
-
-                tx.Commit();
-            }
-            catch
-            {
-                tx.Rollback();
-                throw;
             }
         }
         #endregion
@@ -1703,7 +1774,8 @@ namespace GestorHorarios.DOCENTES
             _carrerasDisponibles.Clear();
             _secondaryPanels.Clear();
             _mainMateriasPanel = null;
-            _todasLasMaterias.Clear();
+            _materiasEnTabla.Clear();
+            _todasLasMateriasInfo.Clear();
         }
 
         private void LimpiarFormulario()
@@ -1729,6 +1801,70 @@ namespace GestorHorarios.DOCENTES
             PanelFormularioDocente.Visibility = Visibility.Collapsed;
             BotonAgregarDocente.Content = "+ Agregar Docente";
             BotonGuardarDocente.Content = "Guardar";
+        }
+        #endregion
+
+        #region Buscador Dinámico
+        private void TxtBuscarDocente_TextChanged(object sender, TextChangedEventArgs e)
+        {
+            PlaceholderBuscar.Visibility = string.IsNullOrWhiteSpace(TxtBuscarDocente.Text) ? Visibility.Visible : Visibility.Collapsed;
+
+            string query = TxtBuscarDocente.Text.ToLower().Trim();
+            if (string.IsNullOrEmpty(query))
+            {
+                PopupBuscador.IsOpen = false;
+                return;
+            }
+
+            var resultados = _docentesActuales
+                .Where(d => d.NombreCompleto.ToLower().Contains(query))
+                .ToList();
+
+            if (resultados.Any())
+            {
+                ListaResultadosBusqueda.ItemsSource = resultados;
+                PopupBuscador.IsOpen = true;
+            }
+            else
+            {
+                PopupBuscador.IsOpen = false;
+            }
+        }
+
+        private async void ListaResultadosBusqueda_SelectionChanged(object sender, SelectionChangedEventArgs e)
+        {
+            if (ListaResultadosBusqueda.SelectedItem is Docente docenteSeleccionado)
+            {
+                PopupBuscador.IsOpen = false;
+                TxtBuscarDocente.Text = ""; // Limpiamos la caja
+
+                // Buscar la tarjeta física en la UI
+                foreach (UIElement el in ListaDocentes.Children)
+                {
+                    if (el is Border card && card.Tag is Docente d && d.IdDocente == docenteSeleccionado.IdDocente)
+                    {
+                        // Scroll automático hacia la tarjeta
+                        card.BringIntoView();
+
+                        // Efecto visual: Resaltar en naranja por 2 segundos
+                        var originalEffect = card.Effect;
+                        card.Effect = new System.Windows.Media.Effects.DropShadowEffect
+                        {
+                            Color = Colors.DarkOrange,
+                            ShadowDepth = 0,
+                            BlurRadius = 25,
+                            Opacity = 1
+                        };
+
+                        await System.Threading.Tasks.Task.Delay(2000);
+
+                        // Regresar a la sombra normal
+                        card.Effect = originalEffect;
+                        break;
+                    }
+                }
+            }
+            ListaResultadosBusqueda.SelectedItem = null;
         }
         #endregion
     }
