@@ -107,8 +107,15 @@ namespace GestorHorarios.Services
 
             var bloquesPorGrupo = new Dictionary<int, List<int>>();
             var materiasPorGrupo = new Dictionary<int, List<Materia>>();
+            var horasAsignadasPorMaestro = new Dictionary<int, int>(horasPrevias);
 
-            // MAPEO EXACTO DE MATERIAS POR GRUPO (INCLUYENDO ESPECIALES)
+            foreach (var d in docentes)
+            {
+                if (!horasAsignadasPorMaestro.ContainsKey(d.IdDocente))
+                    horasAsignadasPorMaestro[d.IdDocente] = 0;
+            }
+
+            // 1. MAPEO EXACTO DE MATERIAS POR GRUPO Y CONTABILIZACIÓN DE PRE-ASIGNACIONES EXPLÍCITAS
             foreach (var g in grupos)
             {
                 bool esMatutino = g.Turno.ToLower().Contains("matutino") || g.Turno.ToLower().StartsWith("m");
@@ -133,10 +140,60 @@ namespace GestorHorarios.Services
                 foreach (var m in materiasDelGrupo)
                 {
                     string key = $"{g.IdGrupo}_{m.IdMateria}";
-                    if (!materiaDocenteAsignado.ContainsKey(key))
+                    if (materiaDocenteAsignado.TryGetValue(key, out int idDocPreasignado) && idDocPreasignado > 0)
                     {
-                        materiaDocenteAsignado[key] = -1;
+                        if (!horasAsignadasPorMaestro.ContainsKey(idDocPreasignado))
+                            horasAsignadasPorMaestro[idDocPreasignado] = 0;
+                        horasAsignadasPorMaestro[idDocPreasignado] += m.Creditos;
                     }
+                }
+            }
+
+            // 2. ASIGNACIÓN INTELIGENTE DE DOCENTES (LOAD BALANCING POR HFG Y DISPONIBILIDAD)
+            foreach (var g in grupos)
+            {
+                var materiasDelGrupo = materiasPorGrupo[g.IdGrupo];
+                var bloquesDelGrupo = bloquesPorGrupo[g.IdGrupo];
+
+                foreach (var m in materiasDelGrupo)
+                {
+                    string key = $"{g.IdGrupo}_{m.IdMateria}";
+                    if (materiaDocenteAsignado.ContainsKey(key) && materiaDocenteAsignado[key] > 0)
+                        continue;
+
+                    var docentesCapaces = docentes
+                        .Where(doc => doc.IdDocente != -1 && doc.MateriasIds.Contains(m.IdMateria))
+                        .ToList();
+
+                    var docentesConCapacidad = docentesCapaces.Where(d =>
+                    {
+                        int limite = d.HorasFrenteGrupo > 0 ? d.HorasFrenteGrupo : d.HorasMaximas;
+                        return (horasAsignadasPorMaestro[d.IdDocente] + m.Creditos) <= limite;
+                    }).ToList();
+
+                    var docentesDisponibles = docentesConCapacidad.Where(d =>
+                        d.DisponibilidadBloques.Count == 0 ||
+                        d.DisponibilidadBloques.Any(disp => bloquesDelGrupo.Contains(int.Parse(disp.Split('_')[1])))
+                    ).ToList();
+
+                    var pool = docentesDisponibles.Count > 0 ? docentesDisponibles : docentesConCapacidad;
+
+                    Docente docenteElegido;
+                    if (pool.Count > 0)
+                    {
+                        // Heurística: Priorizar primero menor HFG (medio tiempo) y luego menor carga asignada (balanceo equitativo)
+                        docenteElegido = pool
+                            .OrderBy(d => d.HorasFrenteGrupo > 0 ? d.HorasFrenteGrupo : d.HorasMaximas)
+                            .ThenBy(d => horasAsignadasPorMaestro[d.IdDocente])
+                            .First();
+                    }
+                    else
+                    {
+                        docenteElegido = docentes.First(d => d.IdDocente == -1);
+                    }
+
+                    materiaDocenteAsignado[key] = docenteElegido.IdDocente;
+                    horasAsignadasPorMaestro[docenteElegido.IdDocente] += m.Creditos;
                 }
             }
 
@@ -268,22 +325,10 @@ namespace GestorHorarios.Services
                 if (doc.IdDocente == -1) continue;
 
                 var clasesSemanalesDocente = new List<BoolVar>();
-                int ocupacionPrevia = horasPrevias.TryGetValue(doc.IdDocente, out int hp) ? hp : 0;
-                int limiteRestante = Math.Max(0, doc.HorasFrenteGrupo - ocupacionPrevia);
-
-                var diasConDisponibilidad = dias.Where(d =>
-                    doc.DisponibilidadBloques.Count == 0 ||
-                    doc.DisponibilidadBloques.Any(b => b.StartsWith($"{d}_"))
-                ).ToList();
-
-                int diasDisponibles = diasConDisponibilidad.Count > 0 ? diasConDisponibilidad.Count : 5;
-                int maxHorasBalanceadas = (int)Math.Ceiling((double)limiteRestante / diasDisponibles) + 2;
-                int limiteDiario = Math.Min(8, maxHorasBalanceadas);
 
                 foreach (var d in dias)
                 {
                     var clasesDiariasDocente = new List<BoolVar>();
-                    var bloquesActivos = new Dictionary<int, BoolVar>();
 
                     for (int b = 1; b <= 12; b++)
                     {
@@ -310,51 +355,17 @@ namespace GestorHorarios.Services
 
                         if (clasesEnEsteBloqueParaDocente.Count > 1)
                             model.AddAtMostOne(clasesEnEsteBloqueParaDocente);
-
-                        if (clasesEnEsteBloqueParaDocente.Count > 0)
-                        {
-                            var bloqueActivo = model.NewBoolVar($"doc_{doc.IdDocente}_{d}_{b}_activo");
-                            model.Add(bloqueActivo == LinearExpr.Sum(clasesEnEsteBloqueParaDocente));
-                            bloquesActivos[b] = bloqueActivo;
-                        }
                     }
 
                     if (clasesDiariasDocente.Count > 0)
-                    {
-                        model.Add(LinearExpr.Sum(clasesDiariasDocente) <= limiteDiario);
-
-                        var trabajaEsteDia = model.NewBoolVar($"trabaja_{doc.IdDocente}_{d}");
-                        model.Add(LinearExpr.Sum(clasesDiariasDocente) > 0).OnlyEnforceIf(trabajaEsteDia);
-                        model.Add(LinearExpr.Sum(clasesDiariasDocente) == 0).OnlyEnforceIf(trabajaEsteDia.Not());
-
-                        var startBlock = model.NewIntVar(1, 12, $"start_{doc.IdDocente}_{d}");
-                        var endBlock = model.NewIntVar(1, 12, $"end_{doc.IdDocente}_{d}");
-
-                        foreach (var kvp in bloquesActivos)
-                        {
-                            int b = kvp.Key;
-                            var activo = kvp.Value;
-                            model.Add(startBlock <= b).OnlyEnforceIf(activo);
-                            model.Add(endBlock >= b).OnlyEnforceIf(activo);
-                        }
-
-                        model.Add(startBlock == 1).OnlyEnforceIf(trabajaEsteDia.Not());
-                        model.Add(endBlock == 1).OnlyEnforceIf(trabajaEsteDia.Not());
-
-                        var span = model.NewIntVar(0, 12, $"span_{doc.IdDocente}_{d}");
-                        model.Add(span == endBlock - startBlock + 1).OnlyEnforceIf(trabajaEsteDia);
-                        model.Add(span == 0).OnlyEnforceIf(trabajaEsteDia.Not());
-
-                        var gaps = model.NewIntVar(0, 12, $"gaps_{doc.IdDocente}_{d}");
-                        model.Add(gaps == span - LinearExpr.Sum(clasesDiariasDocente)).OnlyEnforceIf(trabajaEsteDia);
-                        model.Add(gaps == 0).OnlyEnforceIf(trabajaEsteDia.Not());
-
-                        penalizaciones.Add(gaps * 500);
-                    }
+                        model.Add(LinearExpr.Sum(clasesDiariasDocente) <= 8);
                 }
 
                 if (clasesSemanalesDocente.Count > 0)
                 {
+                    int ocupacionPrevia = horasPrevias.TryGetValue(doc.IdDocente, out int hp) ? hp : 0;
+                    int limiteDocente = doc.HorasFrenteGrupo > 0 ? doc.HorasFrenteGrupo : doc.HorasMaximas;
+                    int limiteRestante = Math.Max(0, limiteDocente - ocupacionPrevia);
                     model.Add(LinearExpr.Sum(clasesSemanalesDocente) <= limiteRestante);
                 }
             }
@@ -363,7 +374,7 @@ namespace GestorHorarios.Services
 
             var solver = new CpSolver
             {
-                StringParameters = "max_time_in_seconds: 35.0"
+                StringParameters = "max_time_in_seconds: 35.0, num_search_workers: 8"
             };
             CpSolverStatus status = solver.Solve(model);
 

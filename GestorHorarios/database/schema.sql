@@ -1417,7 +1417,7 @@ BEGIN
 END
 GO
 
--- 5.5 sp_DiagnosticoCobertura: Soporta tanto materias del semestre como materias asignadas a grupos especiales
+-- 5.5 sp_DiagnosticoCobertura: Soporta asignaciones por grupo y asignaciones generales por materia
 CREATE OR ALTER PROCEDURE [dbo].[sp_DiagnosticoCobertura]
     @Ciclo CHAR(1)
 AS
@@ -1432,12 +1432,18 @@ BEGIN
         g.nombre AS NombreGrupo,
         m.id_materia,
         m.nombre AS NombreMateria,
-        d.nombre AS DocenteAsignado
+        doc.nombre AS DocenteAsignado
     FROM dbo.Carreras c
     INNER JOIN dbo.Grupos g ON c.id_carrera = g.id_carrera
     INNER JOIN dbo.Materias m ON c.id_carrera = m.id_carrera
-    LEFT JOIN dbo.DocenteMateria dm ON g.id_grupo = dm.id_grupo AND m.id_materia = dm.id_materia
-    LEFT JOIN dbo.Docentes d ON dm.id_docente = d.id_docente AND d.id_estado = 1
+    OUTER APPLY (
+        SELECT TOP 1 d.nombre, dm.id_docente
+        FROM dbo.DocenteMateria dm
+        INNER JOIN dbo.Docentes d ON dm.id_docente = d.id_docente AND d.id_estado = 1
+        WHERE dm.id_materia = m.id_materia
+          AND (dm.id_grupo = g.id_grupo OR dm.id_grupo IS NULL)
+        ORDER BY CASE WHEN dm.id_grupo = g.id_grupo THEN 0 ELSE 1 END, d.horas_frente_grupo ASC
+    ) doc
     WHERE m.id_estado = 1
       AND (
           g.es_especial = 1
@@ -1446,7 +1452,7 @@ BEGIN
       )
       AND (
           (g.es_especial = 0 AND g.semestre = m.semestre)
-          OR dm.id_docente IS NOT NULL
+          OR EXISTS (SELECT 1 FROM dbo.DocenteMateria dm2 WHERE dm2.id_grupo = g.id_grupo AND dm2.id_materia = m.id_materia)
       )
     ORDER BY c.id_carrera, g.semestre, g.nombre, m.nombre;
 END

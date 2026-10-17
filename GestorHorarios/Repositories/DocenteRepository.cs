@@ -255,15 +255,17 @@ namespace GestorHorarios.Repositories
                 while (await reader.ReadAsync())
                 {
                     int id = Convert.ToInt32(reader["id_docente"]);
+                    int horasMax = reader["HorasMaximas"] != DBNull.Value ? Convert.ToInt32(reader["HorasMaximas"]) : 20;
                     int hfg = reader["horas_frente_grupo"] != DBNull.Value
                         ? Convert.ToInt32(reader["horas_frente_grupo"])
                         : 0;
+                    if (hfg <= 0) hfg = horasMax;
 
                     dictDocentes[id] = new Docente
                     {
                         IdDocente = id,
                         NombreCompleto = reader["NombreCompleto"].ToString() ?? "",
-                        HorasMaximas = reader["HorasMaximas"] != DBNull.Value ? Convert.ToInt32(reader["HorasMaximas"]) : 20,
+                        HorasMaximas = horasMax,
                         HorasFrenteGrupo = hfg,
                         IdCarreraPrincipal = reader["IdCarreraPrincipal"] != DBNull.Value ? Convert.ToInt32(reader["IdCarreraPrincipal"]) : 0,
                         MateriasIds = new List<int>(),
